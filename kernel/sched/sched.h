@@ -17,7 +17,6 @@
 #include <linux/tick.h>
 #include <linux/slab.h>
 #include <linux/sched_energy.h>
-#include <linux/energy_model.h>
 
 #include "cpupri.h"
 #include "cpudeadline.h"
@@ -56,12 +55,6 @@ extern void cpu_load_update_active(struct rq *this_rq);
 static inline void cpu_load_update_active(struct rq *this_rq) { }
 #endif
 
-#ifdef CONFIG_SCHED_SMT
-extern void update_idle_core(struct rq *rq);
-#else
-static inline void update_idle_core(struct rq *rq) { }
-#endif
-
 /*
  * Helpers for converting nanosecond timing to jiffy resolution
  */
@@ -84,13 +77,7 @@ static inline void update_idle_core(struct rq *rq) { }
 #ifdef CONFIG_64BIT
 # define NICE_0_LOAD_SHIFT	(SCHED_FIXEDPOINT_SHIFT + SCHED_FIXEDPOINT_SHIFT)
 # define scale_load(w)		((w) << SCHED_FIXEDPOINT_SHIFT)
-# define scale_load_down(w) \
-({ \
-	unsigned long __w = (w); \
-	if (__w) \
-		__w = max(2UL, __w >> SCHED_FIXEDPOINT_SHIFT); \
-	__w; \
-})
+# define scale_load_down(w)	((w) >> SCHED_FIXEDPOINT_SHIFT)
 #else
 # define NICE_0_LOAD_SHIFT	(SCHED_FIXEDPOINT_SHIFT)
 # define scale_load(w)		(w)
@@ -928,6 +915,23 @@ static inline int cpu_of(struct rq *rq)
 	return 0;
 #endif
 }
+
+
+#ifdef CONFIG_SCHED_SMT
+
+extern struct static_key_false sched_smt_present;
+
+extern void __update_idle_core(struct rq *rq);
+
+static inline void update_idle_core(struct rq *rq)
+{
+	if (static_branch_unlikely(&sched_smt_present))
+		__update_idle_core(rq);
+}
+
+#else
+static inline void update_idle_core(struct rq *rq) { }
+#endif
 
 DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -1908,6 +1912,17 @@ unsigned long arch_scale_min_freq_capacity(struct sched_domain *sd, int cpu)
 	 * 0, which represents an un-capped state
 	 */
 	return 0;
+}
+#endif
+
+#ifndef arch_scale_cpu_capacity
+static __always_inline
+unsigned long arch_scale_cpu_capacity(struct sched_domain *sd, int cpu)
+{
+	if (sd && (sd->flags & SD_SHARE_CPUCAPACITY) && (sd->span_weight > 1))
+		return sd->smt_gain / sd->span_weight;
+
+	return SCHED_CAPACITY_SCALE;
 }
 #endif
 
