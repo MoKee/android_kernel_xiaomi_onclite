@@ -6488,10 +6488,6 @@ void cgroup_sk_alloc(struct sock_cgroup_data *skcd)
 	if (in_interrupt())
 		return;
 
-	/* Don't associate the sock with unrelated interrupted task's cgroup. */
-	if (in_interrupt())
-		return;
-
 	rcu_read_lock();
 
 	while (true) {
@@ -6512,6 +6508,8 @@ void cgroup_sk_clone(struct sock_cgroup_data *skcd)
 {
 	/* Socket clone path */
 	if (skcd->val) {
+		if (skcd->no_refcnt)
+			return;
 		/*
 		 * We might be cloning a socket which is left in an empty
 		 * cgroup and the cgroup might have already been rmdir'd.
