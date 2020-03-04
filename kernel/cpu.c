@@ -1032,9 +1032,6 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
 	if (!cpu_present(cpu))
 		return -EINVAL;
 
-	if (!tasks_frozen && !cpu_isolated(cpu) && num_online_uniso_cpus() == 1)
-		return -EBUSY;
-
 	cpu_hotplug_begin();
 	if (trace_cpuhp_latency_enabled())
 		start_time = sched_clock();
@@ -2277,9 +2274,6 @@ EXPORT_SYMBOL(__cpu_present_mask);
 struct cpumask __cpu_active_mask __read_mostly;
 EXPORT_SYMBOL(__cpu_active_mask);
 
-struct cpumask __cpu_isolated_mask __read_mostly;
-EXPORT_SYMBOL(__cpu_isolated_mask);
-
 #if CONFIG_LITTLE_CPU_MASK
 static const unsigned long lp_cpu_bits = CONFIG_LITTLE_CPU_MASK;
 const struct cpumask *const cpu_lp_mask = to_cpumask(&lp_cpu_bits);
@@ -2309,11 +2303,6 @@ void init_cpu_possible(const struct cpumask *src)
 void init_cpu_online(const struct cpumask *src)
 {
 	cpumask_copy(&__cpu_online_mask, src);
-}
-
-void init_cpu_isolated(const struct cpumask *src)
-{
-	cpumask_copy(&__cpu_isolated_mask, src);
 }
 
 /*

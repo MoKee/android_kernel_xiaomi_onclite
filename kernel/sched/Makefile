@@ -38,4 +38,3 @@ obj-$(CONFIG_CPU_FREQ_GOV_BLU_SCHEDUTIL) += cpufreq_blu_schedutil.o
 obj-$(CONFIG_CPU_FREQ_GOV_ENERGY_DCFC) += cpufreq_energy_dcfc.o
 obj-$(CONFIG_PSI) += psi.o
 obj-$(CONFIG_NO_HZ_FULL) += isolation.o
-obj-$(CONFIG_SCHED_CORE_CTL) += core_ctl.o

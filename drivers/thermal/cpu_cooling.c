@@ -252,9 +252,6 @@ static int cpufreq_cooling_pm_notify(struct notifier_block *nb,
 				if (cpu_online(cpu) &&
 					!cpumask_test_and_set_cpu(cpu,
 					&cpus_isolated_by_thermal)) {
-					if (sched_isolate_cpu(cpu))
-						cpumask_clear_cpu(cpu,
-						&cpus_isolated_by_thermal);
 				}
 				continue;
 			}
@@ -286,7 +283,6 @@ static int cpufreq_hp_offline(unsigned int offline_cpu)
 		if ((cpufreq_dev->cpufreq_state == cpufreq_dev->max_level) &&
 			(cpumask_test_and_clear_cpu(offline_cpu,
 			&cpus_isolated_by_thermal)))
-			sched_unisolate_cpu_unlocked(offline_cpu);
 		mutex_unlock(&core_isolate_lock);
 		break;
 	}
@@ -738,7 +734,6 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 		if (cpu_online(cpu) &&
 			(!cpumask_test_and_set_cpu(cpu,
 			&cpus_isolated_by_thermal))) {
-			if (sched_isolate_cpu(cpu))
 				cpumask_clear_cpu(cpu,
 					&cpus_isolated_by_thermal);
 		}
@@ -753,7 +748,6 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 			goto update_frequency;
 		} else if (cpumask_test_and_clear_cpu(cpu,
 			&cpus_isolated_by_thermal)) {
-			sched_unisolate_cpu(cpu);
 		}
 	}
 update_frequency:
