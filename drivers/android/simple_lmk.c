@@ -84,8 +84,8 @@ static unsigned long get_total_mm_pages(struct mm_struct *mm)
 	return pages;
 }
 
-static unsigned long find_victims(int *vindex, short target_adj_min,
-				  short target_adj_max)
+static unsigned long find_victims(int *vindex, short target_adj)
+
 {
 	unsigned long pages_found = 0;
 	int old_vindex = *vindex;
