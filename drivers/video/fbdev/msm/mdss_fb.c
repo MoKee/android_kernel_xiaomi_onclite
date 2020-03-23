@@ -2,7 +2,7 @@
  * Core MDSS framebuffer driver.
  *
  * Copyright (C) 2007 Google Incorporated
- * Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -58,6 +58,10 @@
 #include "mdp3_ctrl.h"
 #include "mdss_sync.h"
 
+#ifdef CONFIG_KLAPSE
+#include <linux/klapse.h>
+#endif
+
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -83,12 +87,6 @@
  * Default value is set to 1 sec.
  */
 #define MDP_TIME_PERIOD_CALC_FPS_US	1000000
-
-#define MDSS_BRIGHT_TO_BL_DIM(out, v) do {\
-			out = (12*v*v+1393*v+3060)/4465;\
-			} while (0)
-bool backlight_dimmer = false;
-module_param(backlight_dimmer, bool, 0644);
 
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
@@ -332,14 +330,11 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	if (backlight_dimmer) {
-		MDSS_BRIGHT_TO_BL_DIM(bl_lvl, value);
-	} else {
-		/* This maps android backlight level 0 to 255 into
-		   driver backlight level 0 to bl_max with rounding */
-		MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
-					mfd->panel_info->brightness_max);
-	}
+	/* This maps android backlight level 0 to 255 into
+	 * driver backlight level 0 to bl_max with rounding
+	 */
+	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
+				mfd->panel_info->brightness_max);
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -348,6 +343,9 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 							!mfd->bl_level)) {
 		mutex_lock(&mfd->bl_lock);
 		mdss_fb_set_backlight(mfd, bl_lvl);
+#ifdef CONFIG_KLAPSE
+                set_rgb_slider(bl_lvl);
+#endif
 		mutex_unlock(&mfd->bl_lock);
 	}
 }
@@ -1488,6 +1486,46 @@ static ssize_t mdss_fb_set_cabc_still(struct device *dev,struct device_attribute
 		pr_info("not available\n");
 		return len;
 	}
+
+	gamma_state=param;
+
+	if(param>9){
+		gamma_resume=true;
+		return len;
+	}
+
+	ctl = mfd_to_ctl(mfd);
+	if(!ctl) {
+		pr_debug("%s,Display is off\n",__func__);
+		return len;
+	}
+
+	if (ctl->power_state!=1) {
+		pr_debug("%s,Dsi is not power on\n",__func__);
+		return len;
+	}
+
+	if(first_gamma_state ){
+		first_gamma_state=false;
+		pr_err("%s,first gamma set\n",__func__);
+		return len;
+	}
+
+	if(!first_set_bl){
+		pr_err("%s,wait first_set_bl\n",__func__);
+		return len;
+	}
+
+	pr_err("%s,set_gamma_cmd: %d\n",__func__, param);
+
+	if(gamma_resume){
+		pr_err("%s abandon gamma cmd from app set\n",__func__);
+		gamma_resume=false;
+		return len;
+	}
+
+	mdss_dsi_set_gamma(ctrl,param);
+
 
 	gamma_state=param;
 
@@ -2721,14 +2759,6 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	 * supported for command mode panels. For all other panel, treat lp
 	 * mode as full unblank and ulp mode as full blank.
 	 */
-	if ((mfd->panel_info->type == SPI_PANEL) &&
-		((blank_mode == BLANK_FLAG_LP) ||
-		(blank_mode == BLANK_FLAG_ULP))) {
-		pr_debug("lp/ulp mode are not supported for SPI panels\n");
-		if (mdss_fb_is_power_on_interactive(mfd))
-			return 0;
-	}
-
 	if (mfd->panel_info->type != MIPI_CMD_PANEL) {
 		if (blank_mode == BLANK_FLAG_LP) {
 			pr_debug("lp mode only valid for cmd mode panels\n");
@@ -2801,8 +2831,6 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	int ret;
 	struct mdss_panel_data *pdata;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-	ktime_t start, end;
-	s64 actual_time;
 
 	if ((info == prim_fbi) && (blank_mode == FB_BLANK_UNBLANK) &&
 		atomic_read(&prim_panel_is_on)) {
@@ -2811,7 +2839,6 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 		cancel_delayed_work_sync(&prim_panel_work);
 		return 0;
 	}
-
 	ret = mdss_fb_pan_idle(mfd);
 	if (ret) {
 		pr_warn("mdss_fb_pan_idle for fb%d failed. ret=%d\n",
@@ -2844,12 +2871,7 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	}
 
 	ret = mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
-	end = ktime_get();
-	actual_time = ktime_ms_delta(end, start);
-
-	MDSS_XLOG(blank_mode, actual_time);
-	pr_debug("blank_mode: %d and transition time: %lldms\n",
-					blank_mode, actual_time);
+	MDSS_XLOG(blank_mode);
 
 end:
 	mutex_unlock(&mfd->mdss_sysfs_lock);
@@ -4269,9 +4291,6 @@ static int mdss_fb_pan_display_sub(struct fb_var_screeninfo *var,
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 
-	if (!mfd)
-		return -EPERM;
-
 	if (!mfd->op_enable)
 		return -EPERM;
 
@@ -4518,9 +4537,14 @@ static int __mdss_fb_display_thread(void *data)
 				mfd->index);
 
 	while (1) {
-		wait_event(mfd->commit_wait_q,
+		ret = wait_event_interruptible(mfd->commit_wait_q,
 				(atomic_read(&mfd->commits_pending) ||
 				 kthread_should_stop()));
+
+		if (ret) {
+			pr_info("%s: interrupted", __func__);
+			continue;
+		}
 
 		if (kthread_should_stop())
 			break;

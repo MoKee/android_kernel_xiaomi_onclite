@@ -1,4 +1,5 @@
 /* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -58,9 +59,7 @@ enum {
 };
 
 #define MAX_COPPS_PER_PORT 0x8
-#define ADM_MAX_CHANNELS 32
-
-#define ADSP_ADM_API_VERSION_V3 3
+#define ADM_MAX_CHANNELS 8
 
 /* multiple copp per stream. */
 struct route_payload {
@@ -197,5 +196,4 @@ int adm_programable_channel_mixer(int port_id, int copp_idx, int session_id,
 			char *ch_map);
 void msm_dts_srs_acquire_lock(void);
 void msm_dts_srs_release_lock(void);
-void adm_set_native_mode(int mode);
 #endif /* __Q6_ADM_V2_H__ */

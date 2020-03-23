@@ -809,6 +809,7 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 		mutex_unlock(&driver->md_session_lock);
 		return -EINVAL;
 	}
+
 	msg_mask_tbl_count = (info) ? info->msg_mask_tbl_count :
 			driver->msg_mask_tbl_count;
 	for (i = 0; i < msg_mask_tbl_count; i++, mask++) {
@@ -2140,6 +2141,7 @@ int diag_copy_to_user_msg_mask(char __user *buf, size_t count,
 		mutex_unlock(&mask_info->lock);
 		return -EINVAL;
 	}
+
 	msg_mask_tbl_count = (info) ? info->msg_mask_tbl_count :
 			driver->msg_mask_tbl_count;
 	for (i = 0; i < msg_mask_tbl_count; i++, mask++) {
@@ -2303,8 +2305,6 @@ int diag_process_apps_masks(unsigned char *buf, int len, int pid)
 		return -EINVAL;
 
 	if (*buf == DIAG_CMD_LOG_CONFIG) {
-		if (len < (2 * sizeof(int)))
-			return -EINVAL;
 		sub_cmd = *(int *)(buf + sizeof(int));
 		switch (sub_cmd) {
 		case DIAG_CMD_OP_LOG_DISABLE:
@@ -2322,8 +2322,6 @@ int diag_process_apps_masks(unsigned char *buf, int len, int pid)
 			break;
 		}
 	} else if (*buf == DIAG_CMD_MSG_CONFIG) {
-		if (len < (2 * sizeof(uint8_t)))
-			return -EINVAL;
 		sub_cmd = *(uint8_t *)(buf + sizeof(uint8_t));
 		switch (sub_cmd) {
 		case DIAG_CMD_OP_GET_SSID_RANGE:

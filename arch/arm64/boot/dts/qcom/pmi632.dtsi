@@ -320,14 +320,14 @@
 			qcom,hvdcp-disable;
 			qcom,micro-usb;
 			qcom,sw-jeita-enable = <1>;
-			qcom,fcc-max-ua = <2000000>;
+			qcom,fcc-max-ua = <3000000>;
 			qcom,usb-icl-ua = <3000000>;
 			qcom,fv-max-uv =  <4400000>;
 			qcom,chg-term-src = <1>;
 			qcom,chg-term-current-ma = <(-200)>;
 
 			qcom,thermal-mitigation
-				= <2000000 1500000 1000000 800000
+				= <3000000 2500000 2000000 1500000 1000000 800000
 					500000 200000>;
 
 			qcom,chgr@1000 {
@@ -562,6 +562,7 @@
 			compatible = "qcom,qpnp-vibrator-ldo";
 			reg = <0x5700 0x100>;
 			qcom,vib-ldo-volt-uv = <3000000>;
+			qcom,vib-overdrive-volt-uv = <3544000>;
 			qcom,disable-overdrive;
 		};
 
@@ -770,7 +771,6 @@
 		polling-delay = <0>;
 		thermal-governor = "step_wise";
 		thermal-sensors = <&bcl_sensor 0>;
-		wake-capable-sensor;
 
 		trips {
 			pmi632_ibat_lvl0: ibat-lvl0 {
@@ -786,7 +786,6 @@
 		polling-delay = <0>;
 		thermal-governor = "step_wise";
 		thermal-sensors = <&bcl_sensor 1>;
-		wake-capable-sensor;
 
 		trips {
 			ibat-lvl1 {
@@ -802,7 +801,6 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&bcl_sensor 2>;
-		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -819,7 +817,6 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&bcl_sensor 3>;
-		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -836,7 +833,6 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&bcl_sensor 4>;
-		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -853,7 +849,6 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&bcl_soc>;
-		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -870,7 +865,6 @@
 		polling-delay = <0>;
 		thermal-governor = "step_wise";
 		thermal-sensors = <&pmi632_tz>;
-		wake-capable-sensor;
 
 		trips {
 			pmi632_tz_trip0: pmi632-trip0 {

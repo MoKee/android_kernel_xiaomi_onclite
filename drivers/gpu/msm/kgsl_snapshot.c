@@ -702,20 +702,22 @@ void kgsl_device_snapshot(struct kgsl_device *device,
 	snapshot->size += sizeof(*header);
 
 	/* Build the Linux specific header */
-	if (gmu_fault)
+	/* We either want to only dump GMU, or we want to dump GPU and GMU */
+	if (gmu_fault) {
+		/* Dump only the GMU */
 		kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_OS,
-			snapshot, snapshot_os_no_ctxt, NULL);
-	else
-		kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_OS,
-			snapshot, snapshot_os, NULL);
+				snapshot, snapshot_os_no_ctxt, NULL);
 
-	/*
-	 * Trigger both GPU and GMU snapshot. GPU specific code
-	 * will take care of whether to dumps full state or only
-	 * GMU state based on current GPU power state.
-	 */
-	if (device->ftbl->snapshot)
-		device->ftbl->snapshot(device, snapshot, context);
+		if (device->ftbl->snapshot_gmu)
+			device->ftbl->snapshot_gmu(device, snapshot);
+	} else {
+		/* Dump GPU and GMU */
+		kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_OS,
+				snapshot, snapshot_os, NULL);
+
+		if (device->ftbl->snapshot)
+			device->ftbl->snapshot(device, snapshot, context);
+	}
 
 	/*
 	 * The timestamp is the seconds since boot so it is easier to match to

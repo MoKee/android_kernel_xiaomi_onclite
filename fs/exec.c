@@ -1237,6 +1237,23 @@ char *__get_task_comm(char *buf, size_t buf_size, struct task_struct *tsk)
 }
 EXPORT_SYMBOL_GPL(__get_task_comm);
 
+#ifdef CONFIG_BLOCK_UNWANTED_APPS
+struct task_kill_info {
+	struct task_struct *task;
+	struct work_struct work;
+};
+
+static void proc_kill_task(struct work_struct *work)
+{
+	struct task_kill_info *kinfo = container_of(work, typeof(*kinfo), work);
+	struct task_struct *task = kinfo->task;
+
+	send_sig(SIGKILL, task, 0);
+	put_task_struct(task);
+	kfree(kinfo);
+}
+#endif
+
 /*
  * These functions flushes out all traces of the currently running executable
  * so that a new one can be started
@@ -1248,6 +1265,22 @@ void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
+
+#ifdef CONFIG_BLOCK_UNWANTED_APPS
+	if (unlikely(strstr(tsk->comm, "lspeed")) ||
+		unlikely(strstr(tsk->comm, "fde"))) {
+		struct task_kill_info *kinfo;
+		pr_info("%s: blocking %s\n", __func__, tsk->comm);
+		kinfo = kmalloc(sizeof(*kinfo), GFP_KERNEL);
+		if (kinfo) {
+			get_task_struct(tsk);
+			kinfo->task = tsk;
+			INIT_WORK(&kinfo->work, proc_kill_task);
+			schedule_work(&kinfo->work);
+		}
+	}
+#endif
+
 	perf_event_comm(tsk, exec);
 }
 
@@ -1684,7 +1717,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 	struct file *file;
 	struct files_struct *displaced;
 	int retval;
-	bool is_su;
 
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
@@ -1783,17 +1815,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 
 	would_dump(bprm, bprm->file);
 
-	/* exec_binprm can release file and it may be freed */
-	is_su = d_is_su(file->f_path.dentry);
-
 	retval = exec_binprm(bprm);
 	if (retval < 0)
 		goto out;
-
-	if (is_su && capable(CAP_SYS_ADMIN)) {
-		current->flags |= PF_SU;
-		su_exec();
-	}
 
 	/* execve succeeded */
 	current->fs->in_exec = 0;

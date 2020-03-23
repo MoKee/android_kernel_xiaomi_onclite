@@ -33,6 +33,7 @@
 	};
 };
 
+
 &i2c_3 { /* BLSP1 QUP3 */
                  status = "ok";
 	clock-frequency = <400000>;

@@ -1,4 +1,5 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +30,7 @@
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/qpnp/qpnp-adc.h>
+
 
 #define KELVINMIL_DEGMIL	273160
 #define QPNP_VADC_LDO_VOLTAGE_MIN	1800000
@@ -1403,6 +1405,9 @@ int32_t qpnp_adc_batt_therm_qrd(struct qpnp_vadc_chip *chip,
 		qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd,
 			ARRAY_SIZE(adcmap_batt_therm_qrd),
 			batt_thm_voltage, &adc_chan_result->physical);
+			qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd_30k,
+				ARRAY_SIZE(adcmap_batt_therm_qrd_30k),
+				batt_thm_voltage, &adc_chan_result->physical);
 		}else{
 			qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd_100k,
 				ARRAY_SIZE(adcmap_batt_therm_qrd_100k),

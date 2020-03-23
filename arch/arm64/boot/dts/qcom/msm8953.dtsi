@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -146,16 +146,16 @@
 			label = "cont_splash_mem";
 		};
 
-		adsp_shmem_device_mem: adsp_shmem_device_region@0xc0100000 {
-			compatible = "shared-dma-pool";
-			label = "adsp_shmem_device_mem";
-			reusable;
-			alloc-ranges = <0x0 0xc0100000 0x0 0x08200000>;
-			alignment = <0 0x400000>;
-			size = <0 0x800000>;
+/* xuke @ 20180614	Do not need to define size here, but comes from cmdline send by LK.
+		pstore_reserve_mem: ramoops@0 {
+			compatible = "ramoops";
+			reg = <0x0 0x91400000 0x0 0x400000>;
+			label = "pstore_reserve_mem";
+			record-size	= <0x00020000>;
+			console-size	= <0x00020000>;
+			ftrace-size	= <0x00020000>;
 		};
-
-
+*/
 		gpu_mem: gpu_region@0 {
 			compatible = "shared-dma-pool";
 			reusable;
@@ -168,15 +168,6 @@
 			compatible = "shared-dma-pool";
 			reusable;
 			size = <0x400000>;
-		};
-
-		/* global autoconfigured region for contiguous allocations */
-		linux,cma {
-			compatible = "shared-dma-pool";
-			reusable;
-			alignment = <0 0x400000>;
-			size = <0 0x1400000>;
-			linux,cma-default;
 		};
 	};
 
@@ -1075,7 +1066,8 @@
 			< 1036800000 2>,
 			< 1401600000 3>,
 			< 1689600000 4>,
-			< 1804800000 5>;
+			< 1804800000 5>,
+			< 2016000000 6>;
 		qcom,speed6-bin-v0-cci =
 			<          0 0>,
 			<  261120000 1>,
@@ -2107,7 +2099,6 @@
 		qcom,pil-mss-memsetup;
 		qcom,firmware-name = "modem";
 		qcom,pil-self-auth;
-		qcom,sequential-fw-load;
 		qcom,sysmon-id = <0>;
 		qcom,ssctl-instance-id = <0x12>;
 		qcom,qdsp6v56-1-10;

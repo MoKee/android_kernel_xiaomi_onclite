@@ -91,12 +91,6 @@ enum hrtimer_restart {
  * @base:	pointer to the timer base (per cpu and per clock)
  * @state:	state information (See bit values above)
  * @is_rel:	Set if the timer was armed relative
- * @start_pid:  timer statistics field to store the pid of the task which
- *		started the timer
- * @start_site:	timer statistics field to store the site where the timer
- *		was started
- * @start_comm: timer statistics field to store the name of the process which
- *		started the timer
  *
  * The hrtimer structure must be initialized by hrtimer_init()
  */
@@ -107,11 +101,6 @@ struct hrtimer {
 	struct hrtimer_clock_base	*base;
 	u8				state;
 	u8				is_rel;
-#ifdef CONFIG_TIMER_STATS
-	int				start_pid;
-	void				*start_site;
-	char				start_comm[16];
-#endif
 };
 
 /**
@@ -396,7 +385,7 @@ extern void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 static inline void hrtimer_start(struct hrtimer *timer, ktime_t tim,
 				 const enum hrtimer_mode mode)
 {
-	hrtimer_start_range_ns(timer, tim, 500000, mode);
+	hrtimer_start_range_ns(timer, tim, 0, mode);
 }
 
 extern int hrtimer_cancel(struct hrtimer *timer);
@@ -409,7 +398,7 @@ static inline void hrtimer_start_expires(struct hrtimer *timer,
 	ktime_t soft, hard;
 	soft = hrtimer_get_softexpires(timer);
 	hard = hrtimer_get_expires(timer);
-	delta = max(ktime_to_ns(ktime_sub(hard, soft)), 500000LL);
+	delta = ktime_to_ns(ktime_sub(hard, soft));
 	hrtimer_start_range_ns(timer, soft, delta, mode);
 }
 
