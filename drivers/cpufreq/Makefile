@@ -17,7 +17,6 @@ obj-$(CONFIG_CPU_FREQ_GOV_INTERACTIVE)	+= cpufreq_interactive.o
 obj-$(CONFIG_CPU_FREQ_GOV_COMMON)		+= cpufreq_governor.o
 obj-$(CONFIG_CPU_FREQ_GOV_ATTR_SET)	+= cpufreq_governor_attr_set.o
 obj-$(CONFIG_CPU_BOOST)			+= cpu-boost.o
-obj-$(CONFIG_DSBOOST)			+= dsboost.o
 
 # FP Boost
 obj-$(CONFIG_FINGERPRINT_BOOST)		+= fp-boost.o
