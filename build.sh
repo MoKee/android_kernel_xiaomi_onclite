@@ -8,10 +8,10 @@
 KERNEL_DIR=$PWD
 KERN_IMG=$KERNEL_DIR/out/arch/arm64/boot/Image.gz-dtb
 ZIP_DIR=$KERNEL_DIR/AnyKernel3
-CONFIG=onclite_defconfig
+CONFIG=onc_defconfig
 CROSS_COMPILE="aarch64-linux-android-"
 CROSS_COMPILE_ARM32="arm-linux-androideabi-"
-PATH=:"${KERNEL_DIR}/clang/clang-r353983c/bin:${PATH}:${KERNEL_DIR}/stock/bin:${PATH}:${KERNEL_DIR}/stock_32/bin:${PATH}"
+PATH="${KERNEL_DIR}/stock/bin:${PATH}:${KERNEL_DIR}/stock_32/bin:${PATH}"
 
 # Export
 export ARCH=arm64
@@ -20,11 +20,7 @@ export CROSS_COMPILE_ARM32
 
 # Build start
 make O=out $CONFIG
-make -j$(nproc --all) O=out \
-                      ARCH=arm64 \
-                      CC=clang \
-CLANG_TRIPLE=aarch64-linux-gnu- \
-CROSS_COMPILE=aarch64-linux-android-
+make -j$(nproc --all) O=out
 
 if ! [ -a $KERN_IMG ]; then
     echo "Build error!"
@@ -49,12 +45,10 @@ for MODULES in $(find "${OUTDIR}" -name '*.ko'); do
             "${MODULES}"
     find "${OUTDIR}" -name '*.ko' -exec cp {} "${VENDOR_MODULEDIR}" \;
 done
-cd libufdt/src && python mkdtboimg.py create $OUTDIR/arch/arm64/boot/dtbo.img $OUTDIR/arch/arm64/boot/dts/qcom/*.dtbo
 echo -e "\n(i) Done moving modules"
 
 cd $ZIP_DIR
 cp $KERN_IMG zImage
-cp $OUTDIR/arch/arm64/boot/dtbo.img $ZIP_DIR
 make normal &>/dev/null
 echo "Flashable zip generated under $ZIP_DIR."
 cd ..

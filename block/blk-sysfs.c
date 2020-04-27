@@ -212,6 +212,7 @@ queue_max_sectors_store(struct request_queue *q, const char *page, size_t count)
 
 	spin_lock_irq(q->queue_lock);
 	q->limits.max_sectors = max_sectors_kb << 1;
+	q->backing_dev_info->io_pages = max_sectors_kb >> (PAGE_SHIFT - 10);
 	spin_unlock_irq(q->queue_lock);
 
 	return ret;
@@ -500,7 +501,6 @@ static struct queue_sysfs_entry queue_rq_affinity_entry = {
 static struct queue_sysfs_entry queue_iostats_entry = {
 	.attr = {.name = "iostats", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_show_iostats,
-	.store = queue_store_iostats,
 };
 
 static struct queue_sysfs_entry queue_random_entry = {

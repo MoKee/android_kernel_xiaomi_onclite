@@ -1,5 +1,4 @@
 /* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
- * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,8 +19,8 @@
 #define NUM_DECIMATORS	5
 /* Codec supports 1 compander */
 enum {
-	COMPANDER_1 = 0, /* HPHL/R */
-	COMPANDER_NONE,
+	COMPANDER_NONE = 0,
+	COMPANDER_1, /* HPHL/R */
 	COMPANDER_MAX,
 };
 

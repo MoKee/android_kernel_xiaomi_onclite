@@ -66,6 +66,7 @@ enum {
 	HW_PLATFORM_RCM	= 21,
 	HW_PLATFORM_STP = 23,
 	HW_PLATFORM_SBC = 24,
+	HW_PLATFORM_ADP = 25,
 	HW_PLATFORM_HDK = 31,
 	HW_PLATFORM_INVALID
 };
@@ -87,6 +88,7 @@ const char *hw_platform[] = {
 	[HW_PLATFORM_DTV] = "DTV",
 	[HW_PLATFORM_STP] = "STP",
 	[HW_PLATFORM_SBC] = "SBC",
+	[HW_PLATFORM_ADP] = "ADP",
 	[HW_PLATFORM_HDK] = "HDK",
 };
 
@@ -571,6 +573,7 @@ static struct msm_soc_info cpu_of_id[] = {
 	/* sdxpoorwills ID */
 	[334] = {SDX_CPU_SDXPOORWILLS, "SDXPOORWILLS"},
 	[335] = {SDX_CPU_SDXPOORWILLS, "SDXPOORWILLS"},
+	[408] = {SDX_CPU_SDXPOORWILLS, "SDXPOORWILLS"},
 
 	/* 9650 IDs */
 	[279] = {MSM_CPU_9650, "MDM9650"},
@@ -644,6 +647,10 @@ static struct msm_soc_info cpu_of_id[] = {
 
 	/* QCM2150 ID */
 	[436] = {MSM_CPU_QCM2150, "QCM2150"},
+
+	/* SDM429W IDs*/
+	[416] = {MSM_CPU_SDM429W, "SDM429W"},
+	[437] = {MSM_CPU_SDA429W, "SDA429W"},
 	/* Uninitialized IDs are not known to run Linux.
 	 * MSM_CPU_UNKNOWN is set to 0 to ensure these IDs are
 	 * considered as unknown CPU.
@@ -1630,6 +1637,14 @@ static void * __init setup_dummy_socinfo(void)
 	} else if (early_machine_is_sda429()) {
 		dummy_socinfo.id = 364;
 		strlcpy(dummy_socinfo.build_id, "sda429 - ",
+				sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_sdm429w()) {
+		dummy_socinfo.id = 416;
+		strlcpy(dummy_socinfo.build_id, "sdm429w - ",
+				sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_sda429w()) {
+		dummy_socinfo.id = 437;
+		strlcpy(dummy_socinfo.build_id, "sda429w - ",
 				sizeof(dummy_socinfo.build_id));
 	} else if (early_machine_is_mdm9607()) {
 		dummy_socinfo.id = 290;

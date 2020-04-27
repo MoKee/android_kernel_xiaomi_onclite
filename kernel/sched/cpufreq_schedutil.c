@@ -113,6 +113,12 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	if (unlikely(sg_policy->need_freq_update))
 		return true;
 
+	/* No need to recalculate next freq for min_rate_limit_us
+	 * at least. However we might still decide to further rate
+	 * limit once frequency change direction is decided, according
+	 * to the separate rate limits.
+	 */
+
 	delta_ns = time - sg_policy->last_freq_update_time;
 
 	/* No need to recalculate next freq for min_rate_limit_us at least */
@@ -135,7 +141,6 @@ static bool sugov_up_down_rate_limit(struct sugov_policy *sg_policy, u64 time,
 			return true;
 
 	return false;
-
 }
 
 static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
@@ -334,6 +339,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 			sg_policy->cached_raw_freq = 0;
 		}
 	}
+
 	sugov_update_commit(sg_policy, time, next_f);
 }
 
@@ -704,14 +710,12 @@ static void sugov_tunables_restore(struct cpufreq_policy *policy)
 	sg_policy->up_rate_delay_ns = cached->up_rate_limit_us;
 	sg_policy->down_rate_delay_ns = cached->down_rate_limit_us;
 	update_min_rate_limit_us(sg_policy);
-
 }
 
 static int sugov_init(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy;
 	struct sugov_tunables *tunables;
-	unsigned int lat;
 	int ret = 0;
 
 	/* State should be equivalent to EXIT */

@@ -311,6 +311,9 @@ int msm_vfe47_init_hardware(struct vfe_device *vfe_dev)
 	int rc = -1;
 	enum cam_ahb_clk_client id;
 
+	if (vfe_used_by_adsp(vfe_dev))
+		return msecs_to_jiffies(50);
+
 	if (vfe_dev->pdev->id == 0)
 		id = CAM_AHB_CLIENT_VFE0;
 	else
@@ -2913,7 +2916,7 @@ int msm_vfe47_get_platform_data(struct vfe_device *vfe_dev)
 
 	rc = msm_camera_register_irq(vfe_dev->pdev, vfe_dev->vfe_irq,
 		msm_isp_process_irq,
-		IRQF_TRIGGER_RISING, "vfe", vfe_dev);
+		IRQF_TRIGGER_RISING | IRQF_PERF_CRITICAL, "vfe", vfe_dev);
 	if (rc < 0)
 		goto irq_register_fail;
 

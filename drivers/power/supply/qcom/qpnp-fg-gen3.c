@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -427,6 +427,8 @@ module_param_named(
 
 static int fg_restart;
 static bool fg_sram_dump;
+
+#define FG_RATE_LIM_MS (5 * MSEC_PER_SEC)
 
 /* All getters HERE */
 
@@ -2678,7 +2680,7 @@ static void clear_cycle_counter(struct fg_chip *chip)
 	}
 	rc = fg_sram_write(chip, CYCLE_COUNT_WORD, CYCLE_COUNT_OFFSET,
 			(u8 *)&chip->cyc_ctr.count,
-			sizeof(chip->cyc_ctr.count) / sizeof(u8 *),
+			sizeof(chip->cyc_ctr.count) / (sizeof(u8 *)),
 			FG_IMA_DEFAULT);
 	if (rc < 0)
 		pr_err("failed to clear cycle counter rc=%d\n", rc);
@@ -3708,15 +3710,18 @@ static int fg_get_time_to_empty(struct fg_chip *chip, int *val)
 {
 	int rc, ibatt_avg, msoc, full_soc, act_cap_mah, divisor;
 
+	mutex_lock(&chip->ttf.lock);
 	rc = fg_circ_buf_median(&chip->ttf.ibatt, &ibatt_avg);
 	if (rc < 0) {
 		/* try to get instantaneous current */
 		rc = fg_get_battery_current(chip, &ibatt_avg);
 		if (rc < 0) {
 			pr_err("failed to get battery current, rc=%d\n", rc);
+			mutex_unlock(&chip->ttf.lock);
 			return rc;
 		}
 	}
+	mutex_unlock(&chip->ttf.lock);
 
 	ibatt_avg /= MILLI_UNIT;
 	/* clamp ibatt_avg to 100mA */
@@ -4004,7 +4009,42 @@ static int fg_psy_get_property(struct power_supply *psy,
 				       union power_supply_propval *pval)
 {
 	struct fg_chip *chip = power_supply_get_drvdata(psy);
+	struct fg_saved_data *sd = chip->saved_data + psp;
+	union power_supply_propval typec_sts = { .intval = -1 };
 	int rc = 0;
+
+	if (sd->last_req_expires) {
+		if (time_before(jiffies, sd->last_req_expires)) {
+			*pval = sd->val;
+			return 0;
+		}
+	}
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+	case POWER_SUPPLY_PROP_RESISTANCE_ID:
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
+	case POWER_SUPPLY_PROP_CYCLE_COUNT_ID:
+	case POWER_SUPPLY_PROP_CHARGE_NOW:
+	case POWER_SUPPLY_PROP_CHARGE_FULL:
+	case POWER_SUPPLY_PROP_SOC_REPORTING_READY:
+		/* These props don't require a fg query; don't ratelimit them */
+		break;
+	default:
+		if (!sd->last_req_expires)
+			break;
+
+		if (usb_psy_initialized(chip))
+			power_supply_get_property(chip->usb_psy,
+				POWER_SUPPLY_PROP_TYPEC_MODE, &typec_sts);
+
+		if (typec_sts.intval == POWER_SUPPLY_TYPEC_NONE &&
+			time_before(jiffies, sd->last_req_expires)) {
+			*pval = sd->val;
+			return 0;
+		}
+		break;
+	}
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CAPACITY:
@@ -4132,6 +4172,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 
 	if (rc < 0)
 		return -ENODATA;
+
+	sd->val = *pval;
+	sd->last_req_expires = jiffies + msecs_to_jiffies(FG_RATE_LIM_MS);
 
 	return 0;
 }
@@ -4345,6 +4388,7 @@ static const struct power_supply_desc fg_psy_desc = {
 
 #define DEFAULT_ESR_CHG_TIMER_RETRY	8
 #define DEFAULT_ESR_CHG_TIMER_MAX	16
+#define VOLTAGE_MODE_SAT_CLEAR_BIT	BIT(3)
 static int fg_hw_init(struct fg_chip *chip)
 {
 	int rc;
@@ -4567,6 +4611,14 @@ static int fg_hw_init(struct fg_chip *chip)
 		pr_err("Error in writing batt_temp_delta, rc=%d\n", rc);
 		return rc;
 	}
+
+	rc = fg_sram_masked_write(chip, ESR_EXTRACTION_ENABLE_WORD,
+				ESR_EXTRACTION_ENABLE_OFFSET,
+				VOLTAGE_MODE_SAT_CLEAR_BIT,
+				VOLTAGE_MODE_SAT_CLEAR_BIT,
+				FG_IMA_DEFAULT);
+	if (rc < 0)
+		return rc;
 
 	fg_encode(chip->sp, FG_SRAM_ESR_TIGHT_FILTER,
 		chip->dt.esr_tight_flt_upct, buf);
@@ -5614,6 +5666,7 @@ static int fg_parse_dt(struct fg_chip *chip)
 
 	chip->dt.disable_esr_pull_dn = of_property_read_bool(node,
 					"qcom,fg-disable-esr-pull-dn");
+
 	chip->dt.disable_fg_twm = of_property_read_bool(node,
 					"qcom,fg-disable-in-twm");
 

@@ -56,6 +56,7 @@ void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 	if (ctrl->pwm_bl == NULL || IS_ERR(ctrl->pwm_bl)) {
 		pr_err("%s: Error: lpg_chan=%d pwm request failed",
 				__func__, ctrl->pwm_lpg_chan);
+		ctrl->pwm_bl = NULL;
 	}
 	ctrl->pwm_enabled = 0;
 }
@@ -639,11 +640,13 @@ static int mdss_dsi_roi_merge(struct mdss_dsi_ctrl_pdata *ctrl,
 	return ans;
 }
 
+static char pageset[] = {0xfe, 0x00};			/* DTYPE_DCS_WRITE1 */
 static char caset[] = {0x2a, 0x00, 0x00, 0x03, 0x00};	/* DTYPE_DCS_LWRITE */
 static char paset[] = {0x2b, 0x00, 0x00, 0x05, 0x00};	/* DTYPE_DCS_LWRITE */
 
 /* pack into one frame before sent */
 static struct dsi_cmd_desc set_col_page_addr_cmd[] = {
+	{{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pageset)}, pageset},
 	{{DTYPE_DCS_LWRITE, 0, 0, 0, 1, sizeof(caset)}, caset},	/* packed */
 	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(paset)}, paset},
 };
@@ -653,20 +656,22 @@ static void mdss_dsi_send_col_page_addr(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	struct dcs_cmd_req cmdreq;
 
+	set_col_page_addr_cmd[0].payload = pageset;
+
 	caset[1] = (((roi->x) & 0xFF00) >> 8);
 	caset[2] = (((roi->x) & 0xFF));
 	caset[3] = (((roi->x - 1 + roi->w) & 0xFF00) >> 8);
 	caset[4] = (((roi->x - 1 + roi->w) & 0xFF));
-	set_col_page_addr_cmd[0].payload = caset;
+	set_col_page_addr_cmd[1].payload = caset;
 
 	paset[1] = (((roi->y) & 0xFF00) >> 8);
 	paset[2] = (((roi->y) & 0xFF));
 	paset[3] = (((roi->y - 1 + roi->h) & 0xFF00) >> 8);
 	paset[4] = (((roi->y - 1 + roi->h) & 0xFF));
-	set_col_page_addr_cmd[1].payload = paset;
+	set_col_page_addr_cmd[2].payload = paset;
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds_cnt = 2;
+	cmdreq.cmds_cnt = 3;
 	cmdreq.flags = CMD_REQ_COMMIT;
 	if (unicast)
 		cmdreq.flags |= CMD_REQ_UNICAST;
@@ -729,6 +734,12 @@ static int mdss_dsi_set_col_page_addr(struct mdss_panel_data *pdata,
 						__func__, ctrl->ndx);
 			return 0;
 		}
+
+		if (pinfo->partial_update_col_addr_offset)
+			roi.x += pinfo->partial_update_col_addr_offset;
+
+		if (pinfo->partial_update_row_addr_offset)
+			roi.y += pinfo->partial_update_row_addr_offset;
 
 		if (pinfo->dcs_cmd_by_left) {
 			if (left_or_both && ctrl->ndx == DSI_CTRL_RIGHT) {
@@ -1127,14 +1138,14 @@ end:
 }
 
 #ifdef TARGET_HW_MDSS_HDMI
-/*static void mdss_dsi_panel_off_hdmi(struct mdss_dsi_ctrl_pdata *ctrl,
+static void mdss_dsi_panel_off_hdmi(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct mdss_panel_info *pinfo)
 {
 	if (ctrl->ds_registered && pinfo->is_pluggable) {
 		mdss_dba_utils_video_off(pinfo->dba_data);
 		mdss_dba_utils_hdcp_enable(pinfo->dba_data, false);
 	}
-}*/
+}
 #else
 static void mdss_dsi_panel_off_hdmi(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct mdss_panel_info *pinfo)
@@ -1168,6 +1179,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	if (ctrl->ds_registered && pinfo->is_pluggable) {
 		mdss_dba_utils_video_off(pinfo->dba_data);
 		mdss_dba_utils_hdcp_enable(pinfo->dba_data, false);
+		mdss_dsi_panel_off_hdmi(ctrl, pinfo);
 	}
 	
 	display_on = false;
@@ -2242,6 +2254,7 @@ error:
 static int mdss_dsi_parse_panel_features(struct device_node *np,
 	struct mdss_dsi_ctrl_pdata *ctrl)
 {
+	u32 value[2];
 	struct mdss_panel_info *pinfo;
 
 	if (!np || !ctrl) {
@@ -2259,6 +2272,14 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 					pinfo->partial_update_enabled);
 		ctrl->set_col_page_addr = mdss_dsi_set_col_page_addr;
 		if (pinfo->partial_update_enabled) {
+			int rc = of_property_read_u32_array(np,
+				"qcom,partial-update-addr-offset",
+				value, 2);
+			pinfo->partial_update_col_addr_offset =
+				(!rc ? value[0] : 0);
+			pinfo->partial_update_row_addr_offset =
+				(!rc ? value[1] : 0);
+
 			pinfo->partial_update_roi_merge =
 					of_property_read_bool(np,
 					"qcom,partial-update-roi-merge");
@@ -2737,20 +2758,24 @@ static int mdss_panel_parse_display_timings(struct device_node *np,
 
 	timings_np = of_get_child_by_name(np, "qcom,mdss-dsi-display-timings");
 	if (!timings_np) {
-		struct dsi_panel_timing pt;
+		struct dsi_panel_timing *pt;
 
-		memset(&pt, 0, sizeof(struct dsi_panel_timing));
+		pt = kzalloc(sizeof(*pt), GFP_KERNEL);
+		if (!pt)
+			return -ENOMEM;
 
 		/*
 		 * display timings node is not available, fallback to reading
 		 * timings directly from root node instead
 		 */
 		pr_debug("reading display-timings from panel node\n");
-		rc = mdss_dsi_panel_timing_from_dt(np, &pt, panel_data);
+		rc = mdss_dsi_panel_timing_from_dt(np, pt, panel_data);
 		if (!rc) {
-			mdss_dsi_panel_config_res_properties(np, &pt,
+			mdss_dsi_panel_config_res_properties(np, pt,
 					panel_data, true);
-			rc = mdss_dsi_panel_timing_switch(ctrl, &pt.timing);
+			rc = mdss_dsi_panel_timing_switch(ctrl, &pt->timing);
+		} else {
+			kfree(pt);
 		}
 		return rc;
 	}

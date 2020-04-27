@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018 The Linux Foundation. All rights reserved.
  * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1494,18 +1494,7 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		break;
 	}
 
-	/*
-	 * If charge termination WA is active and has suspended charging, then
-	 * continue reporting charging status as FULL.
-	 */
-	if (is_client_vote_enabled(chg->usb_icl_votable,
-						CHG_TERMINATION_VOTER)) {
-		val->intval = POWER_SUPPLY_STATUS_FULL;
-		return 0;
-	}
-
-
-	if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
+        if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
 		val->intval = POWER_SUPPLY_STATUS_CHARGING;
 		return 0;
 	}
@@ -2954,7 +2943,6 @@ irqreturn_t batt_temp_changed_irq_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	rerun_election(chg->fcc_votable);
 	power_supply_changed(chg->batt_psy);
 	return IRQ_HANDLED;
 }

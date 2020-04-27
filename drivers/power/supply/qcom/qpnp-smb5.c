@@ -1277,8 +1277,7 @@ static enum power_supply_property smb5_batt_props[] = {
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_RECHARGE_SOC,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
-	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
-	//begin for the total capacity of batt in  2018.11.05
+        //begin for the total capacity of batt in  2018.11.05
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	//end for the total capacity of batt in  2018.11.05
 	#ifdef XIAOMI_CHARGER_RUNIN

@@ -118,11 +118,4 @@ all.config
 
 # fetched Android config fragments
 kernel/configs/android-*.cfg
-
-# Don't track content of these folders
-AnyKernel3
-clang
-libufdt
-stock
-stock_32
-out
+net/wireguard/

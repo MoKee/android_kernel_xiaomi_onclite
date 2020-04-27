@@ -28,6 +28,10 @@ static enum sched_boost_policy boost_policy_dt = SCHED_BOOST_NONE;
 static DEFINE_MUTEX(boost_mutex);
 static unsigned int freq_aggr_threshold_backup;
 
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+static int boost_slot;
+#endif // CONFIG_DYNAMIC_STUNE_BOOST
+
 static inline void boost_kick(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
@@ -40,6 +44,7 @@ static void boost_kick_cpus(void)
 {
 	int i;
 	struct cpumask kick_mask;
+	u32 nr_running;
 
 	if (boost_policy != SCHED_BOOST_ON_BIG)
 		return;
@@ -47,8 +52,20 @@ static void boost_kick_cpus(void)
 	cpumask_andnot(&kick_mask, cpu_online_mask, cpu_isolated_mask);
 
 	for_each_cpu(i, &kick_mask) {
-		if (cpu_capacity(i) != max_capacity)
-			boost_kick(i);
+		/*
+		 * kick only "small" cluster
+		 */
+		if (cpu_capacity(i) != max_capacity) {
+			nr_running = ACCESS_ONCE(cpu_rq(i)->nr_running);
+
+			/*
+			 * make sense to interrupt CPU if its run-queue
+			 * has something running in order to check for
+			 * migration afterwards, otherwise skip it.
+			 */
+			if (nr_running)
+				boost_kick(i);
+		}
 	}
 }
 
@@ -115,6 +132,14 @@ static bool verify_boost_params(int old_val, int new_val)
 
 static void _sched_set_boost(int old_val, int type)
 {
+
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+	if (type > 0)
+		do_stune_sched_boost("top-app", &boost_slot);
+	else
+		reset_stune_boost("top-app", boost_slot);
+#endif // CONFIG_DYNAMIC_STUNE_BOOST
+
 	switch (type) {
 	case NO_BOOST:
 		if (old_val == FULL_THROTTLE_BOOST)
@@ -171,6 +196,8 @@ void sched_boost_parse_dt(void)
 int sched_set_boost(int type)
 {
 	int ret = 0;
+
+	return 0;
 
 	mutex_lock(&boost_mutex);
 
