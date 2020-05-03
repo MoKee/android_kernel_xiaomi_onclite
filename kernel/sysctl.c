@@ -123,6 +123,7 @@ static int sixty = 60;
 #endif
 
 static int __maybe_unused neg_one = -1;
+static int __maybe_unused neg_three = -3;
 
 static int zero;
 static int __maybe_unused one = 1;
@@ -346,7 +347,7 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sched_boost_handler,
-		.extra1         = &zero,
+		.extra1         = &neg_three,
 		.extra2		= &three,
 	},
 #endif
@@ -367,8 +368,17 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
-		.procname	= "sched_min_task_util_for_boost_colocation",
-		.data		= &sysctl_sched_min_task_util_for_boost_colocation,
+		.procname	= "sched_min_task_util_for_boost",
+		.data		= &sysctl_sched_min_task_util_for_boost,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_min_task_util_for_colocation",
+		.data		= &sysctl_sched_min_task_util_for_colocation,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
@@ -458,6 +468,7 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#ifdef CONFIG_SCHED_DEBUG
 	{
 		.procname	= "sched_nr_migrate",
 		.data		= &sysctl_sched_nr_migrate,
@@ -480,6 +491,7 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#endif /* CONFIG_SCHED_DEBUG */
 #ifdef CONFIG_SCHEDSTATS
 	{
 		.procname	= "sched_schedstats",

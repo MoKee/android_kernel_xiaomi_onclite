@@ -227,6 +227,9 @@ config ARCH_HAS_FORTIFY_SOURCE
 	  An architecture should select this when it can successfully
 	  build and run with CONFIG_FORTIFY_SOURCE.
 
+config ARCH_HAS_SET_MEMORY
+	bool
+
 config FORTIFY_COMPILE_CHECK
 	depends on ARCH_HAS_FORTIFY_SOURCE
 	bool
@@ -309,6 +312,9 @@ config HAVE_PERF_USER_STACK_DUMP
 config HAVE_ARCH_JUMP_LABEL
 	bool
 
+config HAVE_ARCH_JUMP_LABEL_RELATIVE
+	bool
+
 config HAVE_RCU_TABLE_FREE
 	bool
 
@@ -327,6 +333,9 @@ config HAVE_CMPXCHG_LOCAL
 	bool
 
 config HAVE_CMPXCHG_DOUBLE
+	bool
+
+config ARCH_WEAK_RELEASE_ACQUIRE
 	bool
 
 config ARCH_WANT_IPC_PARSE_VERSION

@@ -503,6 +503,11 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 			__func__, inst);
 		return -EINVAL;
 	}
+	if (inst->in_flush && inst->session_type == MSM_VIDC_DECODER &&
+				b->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+		dprintk(VIDC_ERR, "%s: session in flush, discarding qbuf\n", __func__);
+		return -EINVAL;
+	}
 
 	for (i = 0; i < b->length; i++) {
 		b->m.planes[i].m.fd = b->m.planes[i].reserved[0];
@@ -1453,6 +1458,7 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	int rc = 0, c = 0;
 	struct msm_vidc_inst *inst;
+	const char *ctrl_name = NULL;
 
 	if (!ctrl) {
 		dprintk(VIDC_ERR, "%s invalid parameters for ctrl\n", __func__);
@@ -1476,9 +1482,12 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 			}
 		}
 	}
-	if (rc)
+	if (rc) {
+		ctrl_name = v4l2_ctrl_get_name(ctrl->id);
 		dprintk(VIDC_ERR, "Failed setting control: Inst = %pK (%s)\n",
-				inst, v4l2_ctrl_get_name(ctrl->id));
+			inst, ctrl_name ? ctrl_name : "Invalid ctrl");
+	}
+
 	return rc;
 }
 

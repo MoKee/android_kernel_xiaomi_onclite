@@ -377,8 +377,6 @@ struct kvm {
 	struct mutex slots_lock;
 	struct mm_struct *mm; /* userspace tied to this vm */
 	struct kvm_memslots *memslots[KVM_ADDRESS_SPACE_NUM];
-	struct srcu_struct srcu;
-	struct srcu_struct irq_srcu;
 	struct kvm_vcpu *vcpus[KVM_MAX_VCPUS];
 
 	/*
@@ -431,6 +429,8 @@ struct kvm {
 	struct list_head devices;
 	struct dentry *debugfs_dentry;
 	struct kvm_stat_data **debugfs_stat_data;
+	struct srcu_struct srcu;
+	struct srcu_struct irq_srcu;
 };
 
 #define kvm_err(fmt, ...) \
@@ -760,8 +760,6 @@ void kvm_arch_hardware_unsetup(void);
 void kvm_arch_check_processor_compat(void *rtn);
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu);
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu);
-
-void *kvm_kvzalloc(unsigned long size);
 
 #ifndef __KVM_HAVE_ARCH_VM_ALLOC
 static inline struct kvm *kvm_arch_alloc_vm(void)

@@ -31,14 +31,27 @@ config ARM64
 	select ARCH_INLINE_WRITE_UNLOCK_BH if !PREEMPT
 	select ARCH_INLINE_WRITE_UNLOCK_IRQ if !PREEMPT
 	select ARCH_INLINE_WRITE_UNLOCK_IRQRESTORE if !PREEMPT
+	select ARCH_INLINE_SPIN_TRYLOCK if !PREEMPT
+	select ARCH_INLINE_SPIN_TRYLOCK_BH if !PREEMPT
+	select ARCH_INLINE_SPIN_LOCK if !PREEMPT
+	select ARCH_INLINE_SPIN_LOCK_BH if !PREEMPT
+	select ARCH_INLINE_SPIN_LOCK_IRQ if !PREEMPT
+	select ARCH_INLINE_SPIN_LOCK_IRQSAVE if !PREEMPT
+	select ARCH_INLINE_SPIN_UNLOCK if !PREEMPT
+	select ARCH_INLINE_SPIN_UNLOCK_BH if !PREEMPT
+	select ARCH_INLINE_SPIN_UNLOCK_IRQ if !PREEMPT
+	select ARCH_INLINE_SPIN_UNLOCK_IRQRESTORE if !PREEMPT
 	select ARCH_USE_CMPXCHG_LOCKREF
 	select ARCH_USE_QUEUED_RWLOCKS
 	select ARCH_SUPPORTS_LTO_CLANG
+	select ARCH_USE_QUEUED_SPINLOCKS
 	select ARCH_SUPPORTS_ATOMIC_RMW
+	select ARCH_SUPPORTS_INT128
 	select ARCH_SUPPORTS_NUMA_BALANCING
 	select ARCH_WANT_COMPAT_IPC_PARSE_VERSION
 	select ARCH_WANT_FRAME_POINTERS
 	select ARCH_HAS_UBSAN_SANITIZE_ALL
+	select ARCH_HAS_SET_MEMORY
 	select ARM_AMBA
 	select ARM_ARCH_TIMER
 	select ARM_GIC
@@ -1067,6 +1080,17 @@ config ARM64_UAO
 	  regular load/store instructions if the cpu does not implement the
 	  feature.
 
+config ARM64_PMEM
+	bool "Enable support for persistent memory"
+	select ARCH_HAS_PMEM_API
+	help
+	  Say Y to enable support for the persistent memory API based on the
+	  ARMv8.2 DCPoP feature.
+
+	  The feature is detected at runtime, and the kernel will use DC CVAC
+	  operations if DC CVAP is not supported (following the behaviour of
+	  DC CVAP itself if the system does not define a point of persistence).
+
 endmenu
 
 config ARM64_MODULE_CMODEL_LARGE
@@ -1288,6 +1312,36 @@ config COMPAT
 
 	  If you want to execute 32-bit userspace applications, say Y.
 
+config KUSER_HELPERS
+	bool "Enable the kuser helpers page in 32-bit processes"
+	depends on COMPAT
+	default y
+	help
+	  Warning: disabling this option may break 32-bit applications.
+
+	  Provide kuser helpers in a special purpose fixed-address page. The
+	  kernel provides helper code to userspace in read-only form at a fixed
+	  location to allow userspace to be independent of the CPU type fitted
+	  to the system. This permits 32-bit binaries to be run on ARMv6 through
+	  to ARMv8 without modification.
+
+	  See Documentation/arm/kernel_user_helpers.txt for details.
+
+	  However, the fixed-address nature of these helpers can be used by ROP
+	  (return-orientated programming) authors when creating exploits.
+
+	  If all of the 32-bit binaries and libraries that run on your platform
+	  are built specifically for your platform, and make no use of these
+	  helpers, then you can turn this option off to hinder such exploits.
+	  However, in that case, if a binary or library relying on those helpers
+	  is run, it will receive a SIGSEGV signal, which will terminate the
+	  program. Typically, binaries compiled for ARMv7 or later do not use
+	  the kuser helpers.
+
+	  Say N here only if you are absolutely certain that you do not need
+	  these helpers; otherwise, the safe option is to say Y (the default
+	  for now)
+
 config SYSVIPC_COMPAT
 	def_bool y
 	depends on COMPAT && SYSVIPC
@@ -1295,6 +1349,30 @@ config SYSVIPC_COMPAT
 config KEYS_COMPAT
 	def_bool y
 	depends on COMPAT && KEYS
+
+config COMPAT_VDSO
+	bool "32-bit vDSO"
+	depends on COMPAT
+	default n
+	help
+	  Warning: a 32-bit toolchain is necessary to build the vDSO. You
+	  must explicitly define which toolchain should be used by setting
+	  CROSS_COMPILE_ARM32 to the prefix of the 32-bit toolchain (same format
+	  as CROSS_COMPILE). If CROSS_COMPILE_ARM32 is empty, a warning will be
+	  printed and the kernel will be built as if COMPAT_VDSO had not been
+	  set. If CROSS_COMPILE_ARM32 is set to an invalid prefix, compilation
+	  will be aborted.
+
+	  Provide a vDSO to 32-bit processes. It includes the symbols provided
+	  by the vDSO from the 32-bit kernel, so that a 32-bit libc can use
+	  the compat vDSO without modification. It also provides sigreturn
+	  trampolines, replacing the sigreturn page.
+
+config CROSS_COMPILE_ARM32
+	string "32-bit toolchain prefix"
+	help
+	  Same as setting CROSS_COMPILE_ARM32 in the environment, but saved for
+	  future builds. The environment variable overrides this config option.
 
 endmenu
 

@@ -4,6 +4,7 @@
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
 
+#include <linux/cache.h>
 #include <linux/time.h>
 #include <linux/proc_fs.h>
 #include <linux/kernel.h>
@@ -51,7 +52,7 @@ static void proc_evict_inode(struct inode *inode)
 	}
 }
 
-static struct kmem_cache * proc_inode_cachep;
+static struct kmem_cache *proc_inode_cachep __ro_after_init;
 
 static struct inode *proc_alloc_inode(struct super_block *sb)
 {
@@ -322,30 +323,36 @@ static int proc_reg_open(struct inode *inode, struct file *file)
 	 * by hand in remove_proc_entry(). For this, save opener's credentials
 	 * for later.
 	 */
-	pdeo = kzalloc(sizeof(struct pde_opener), GFP_KERNEL);
-	if (!pdeo)
-		return -ENOMEM;
-
-	if (!use_pde(pde)) {
-		kfree(pdeo);
+	if (!use_pde(pde))
 		return -ENOENT;
-	}
-	open = pde->proc_fops->open;
-	release = pde->proc_fops->release;
 
+	release = pde->proc_fops->release;
+	if (release) {
+		pdeo = kmalloc(sizeof(struct pde_opener), GFP_KERNEL);
+		if (!pdeo) {
+			rv = -ENOMEM;
+			goto out_unuse;
+		}
+	}
+
+	open = pde->proc_fops->open;
 	if (open)
 		rv = open(inode, file);
 
-	if (rv == 0 && release) {
-		/* To know what to release. */
-		pdeo->file = file;
-		/* Strictly for "too late" ->release in proc_reg_release(). */
-		spin_lock(&pde->pde_unload_lock);
-		list_add(&pdeo->lh, &pde->pde_openers);
-		spin_unlock(&pde->pde_unload_lock);
-	} else
-		kfree(pdeo);
+	if (release) {
+		if (rv == 0) {
+			/* To know what to release. */
+			pdeo->file = file;
+			pdeo->closing = false;
+			pdeo->c = NULL;
+			spin_lock(&pde->pde_unload_lock);
+			list_add(&pdeo->lh, &pde->pde_openers);
+			spin_unlock(&pde->pde_unload_lock);
+		} else
+			kfree(pdeo);
+	}
 
+out_unuse:
 	unuse_pde(pde);
 	return rv;
 }

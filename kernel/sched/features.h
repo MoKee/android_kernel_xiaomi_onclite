@@ -61,6 +61,7 @@ SCHED_FEAT(TTWU_QUEUE, false)
  * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
  */
 SCHED_FEAT(SIS_AVG_CPU, false)
+SCHED_FEAT(SIS_PROP, true)
 
 #ifdef HAVE_RT_PUSH_IPI
 /*
@@ -81,6 +82,12 @@ SCHED_FEAT(LB_MIN, false)
 SCHED_FEAT(ATTACH_AGE_LOAD, true)
 
 /*
+ * UtilEstimation. Use estimated CPU utilization.
+ */
+SCHED_FEAT(UTIL_EST, true)
+SCHED_FEAT(UTIL_EST_FASTUP, true)
+
+/*
  * Energy aware scheduling. Use platform energy model to guide scheduling
  * decisions optimizing for energy efficiency.
  */
@@ -89,14 +96,6 @@ SCHED_FEAT(ENERGY_AWARE, true)
 #else
 SCHED_FEAT(ENERGY_AWARE, false)
 #endif
-
-/*
- * Minimum capacity capping. Keep track of minimum capacity factor when
- * minimum frequency available to a policy is modified.
- * If enabled, this can be used to inform the scheduler about capacity
- * restrictions.
- */
-SCHED_FEAT(MIN_CAPACITY_CAPPING, false)
 
 /*
  * Enforce the priority of candidates selected by find_best_target()
@@ -109,7 +108,7 @@ SCHED_FEAT(FBT_STRICT_ORDER, false)
  * ON: schedtune.prefer_idle is replaced with need_idle
  * OFF: schedtune.prefer_idle is honored as is.
  */
-SCHED_FEAT(EAS_USE_NEED_IDLE, true)
+SCHED_FEAT(EAS_USE_NEED_IDLE, false)
 
 
 /*
@@ -122,3 +121,10 @@ SCHED_FEAT(EAS_USE_NEED_IDLE, true)
  * RT class.
  */
 SCHED_FEAT(SCHEDTUNE_BOOST_HOLD_ALL, false)
+
+/*
+ * Inflate the effective utilization of SchedTune-boosted tasks, which
+ * generally leads to usage of higher frequencies.
+ * If disabled, boosts will only bias tasks to higher-capacity CPUs.
+ */
+SCHED_FEAT(SCHEDTUNE_BOOST_UTIL, false)

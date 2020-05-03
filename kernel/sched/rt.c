@@ -9,9 +9,11 @@
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/irq_work.h>
+#include <linux/hrtimer.h>
 #include <trace/events/sched.h>
 
 #include "walt.h"
+#include "tune.h"
 
 int sched_rr_timeslice = RR_TIMESLICE;
 
@@ -1006,6 +1008,70 @@ static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
 	return 0;
 }
 
+#define RT_SCHEDTUNE_INTERVAL 50000000ULL
+
+static enum hrtimer_restart rt_schedtune_timer(struct hrtimer *timer)
+{
+	struct sched_rt_entity *rt_se = container_of(timer,
+			struct sched_rt_entity,
+			schedtune_timer);
+	struct task_struct *p = rt_task_of(rt_se);
+	struct rq *rq = task_rq(p);
+
+	raw_spin_lock(&rq->lock);
+
+	/*
+	 * Nothing to do if:
+	 * - task has switched runqueues
+	 * - task isn't RT anymore
+	 */
+	if (rq != task_rq(p) || (p->sched_class != &rt_sched_class))
+		goto out;
+
+	/*
+	 * If task got enqueued back during callback time, it means we raced
+	 * with the enqueue on another cpu, that's Ok, just do nothing as
+	 * enqueue path would have tried to cancel us and we shouldn't run
+	 * Also check the schedtune_enqueued flag as class-switch on a
+	 * sleeping task may have already canceled the timer and done dq
+	 */
+	if (p->on_rq || !rt_se->schedtune_enqueued)
+		goto out;
+
+	/*
+	 * RT task is no longer active, cancel boost
+	 */
+	rt_se->schedtune_enqueued = false;
+	schedtune_dequeue_task(p, cpu_of(rq));
+	cpufreq_update_util(rq, SCHED_CPUFREQ_RT);
+out:
+	raw_spin_unlock(&rq->lock);
+
+	/*
+	 * This can free the task_struct if no more references.
+	 */
+	put_task_struct(p);
+
+	return HRTIMER_NORESTART;
+}
+
+void init_rt_schedtune_timer(struct sched_rt_entity *rt_se)
+{
+	struct hrtimer *timer = &rt_se->schedtune_timer;
+
+	hrtimer_init(timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	timer->function = rt_schedtune_timer;
+	rt_se->schedtune_enqueued = false;
+}
+
+static void start_schedtune_timer(struct sched_rt_entity *rt_se)
+{
+	struct hrtimer *timer = &rt_se->schedtune_timer;
+
+	hrtimer_start(timer, ns_to_ktime(RT_SCHEDTUNE_INTERVAL),
+			HRTIMER_MODE_REL_PINNED);
+}
+
 /*
  * Update the current task's runtime statistics. Skip current tasks that
  * are not in our scheduling class.
@@ -1392,6 +1458,33 @@ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 
 	if (!task_current(rq, p) && tsk_nr_cpus_allowed(p) > 1)
 		enqueue_pushable_task(rq, p);
+
+	if (!schedtune_task_boost(p))
+		return;
+
+	/*
+	 * If schedtune timer is active, that means a boost was already
+	 * done, just cancel the timer so that deboost doesn't happen.
+	 * Otherwise, increase the boost. If an enqueued timer was
+	 * cancelled, put the task reference.
+	 */
+	if (hrtimer_try_to_cancel(&rt_se->schedtune_timer) == 1)
+		put_task_struct(p);
+
+	/*
+	 * schedtune_enqueued can be true in the following situation:
+	 * enqueue_task_rt grabs rq lock before timer fires
+	 *    or before its callback acquires rq lock
+	 * schedtune_enqueued can be false if timer callback is running
+	 * and timer just released rq lock, or if the timer finished
+	 * running and canceling the boost
+	 */
+	if (rt_se->schedtune_enqueued)
+		return;
+
+	rt_se->schedtune_enqueued = true;
+	schedtune_enqueue_task(p, cpu_of(rq));
+	cpufreq_update_util(rq, SCHED_CPUFREQ_RT);
 }
 
 static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
@@ -1403,6 +1496,19 @@ static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 	walt_dec_cumulative_runnable_avg(rq, p);
 
 	dequeue_pushable_task(rq, p);
+
+	if (!rt_se->schedtune_enqueued)
+		return;
+
+	if (flags == DEQUEUE_SLEEP) {
+		get_task_struct(p);
+		start_schedtune_timer(rt_se);
+		return;
+	}
+
+	rt_se->schedtune_enqueued = false;
+	schedtune_dequeue_task(p, cpu_of(rq));
+	cpufreq_update_util(rq, SCHED_CPUFREQ_RT);
 }
 
 /*
@@ -1443,10 +1549,38 @@ static void yield_task_rt(struct rq *rq)
 static int find_lowest_rq(struct task_struct *task);
 
 /*
+ * Perform a schedtune dequeue and cancelation of boost timers if needed.
+ * Should be called only with the rq->lock held.
+ */
+static void schedtune_dequeue_rt(struct rq *rq, struct task_struct *p)
+{
+	struct sched_rt_entity *rt_se = &p->rt;
+
+	BUG_ON(!raw_spin_is_locked(&rq->lock));
+
+	if (!rt_se->schedtune_enqueued)
+		return;
+
+	/*
+	 * Incase of class change cancel any active timers. If an enqueued
+	 * timer was cancelled, put the task ref.
+	 */
+	if (hrtimer_try_to_cancel(&rt_se->schedtune_timer) == 1)
+		put_task_struct(p);
+
+	/* schedtune_enqueued is true, deboost it */
+	rt_se->schedtune_enqueued = false;
+	schedtune_dequeue_task(p, task_cpu(p));
+	cpufreq_update_util(rq, SCHED_CPUFREQ_RT);
+}
+
+/*
  * Return whether the task on the given cpu is currently non-preemptible
  * while handling a potentially long softint, or if the task is likely
- * to block preemptions soon because it is a ksoftirq thread that is
- * handling slow softints.
+ * to block preemptions soon because (a) it is a ksoftirq thread that is
+ * handling slow softints, (b) it is idle and therefore likely to start
+ * processing the irq's immediately, (c) the cpu is currently handling
+ * hard irq's and will soon move on to the softirq handler.
  */
 bool
 task_may_not_preempt(struct task_struct *task, int cpu)
@@ -1456,14 +1590,16 @@ task_may_not_preempt(struct task_struct *task, int cpu)
 	struct task_struct *cpu_ksoftirqd = per_cpu(ksoftirqd, cpu);
 
 	return ((softirqs & LONG_SOFTIRQ_MASK) &&
-		(task == cpu_ksoftirqd ||
-		 task_thread_info(task)->preempt_count & SOFTIRQ_MASK));
+		(task == cpu_ksoftirqd || is_idle_task(task) ||
+		 (task_thread_info(task)->preempt_count
+			& (HARDIRQ_MASK | SOFTIRQ_MASK))));
 }
 
 static int
-select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags)
+select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags,
+		  int sibling_count_hint)
 {
-	struct task_struct *curr;
+	struct task_struct *curr, *tgt_task;
 	struct rq *rq;
 	bool may_not_preempt;
 
@@ -1515,6 +1651,18 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags)
 	      curr->prio <= p->prio))) {
 		int target = find_lowest_rq(p);
 
+
+		/*
+		 * Check once for losing a race with the other core's irq
+		 * handler. This does not happen frequently, but it can avoid
+		 * delaying the execution of the RT task in those cases.
+		 */
+		if (target != -1) {
+			tgt_task = READ_ONCE(cpu_rq(target)->curr);
+			if (task_may_not_preempt(tgt_task, target))
+				target = find_lowest_rq(p);
+		}
+
 		/*
 		 * If cpu is non-preemptible, prefer remote cpu
 		 * even if it's running a higher-prio task.
@@ -1529,6 +1677,19 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags)
 	rcu_read_unlock();
 
 out:
+	/*
+	 * If previous CPU was different, make sure to cancel any active
+	 * schedtune timers and deboost.
+	 */
+	if (task_cpu(p) != cpu) {
+		unsigned long fl;
+		struct rq *prq = task_rq(p);
+
+		raw_spin_lock_irqsave(&prq->lock, fl);
+		schedtune_dequeue_rt(prq, p);
+		raw_spin_unlock_irqrestore(&prq->lock, fl);
+	}
+
 	return cpu;
 }
 
@@ -1624,6 +1785,8 @@ static struct task_struct *_pick_next_task_rt(struct rq *rq)
 	return p;
 }
 
+extern int update_rt_rq_load_avg(u64 now, int cpu, struct rt_rq *rt_rq, int running);
+
 static struct task_struct *
 pick_next_task_rt(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
@@ -1669,12 +1832,18 @@ pick_next_task_rt(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 
 	queue_push_tasks(rq);
 
+	if (p)
+		update_rt_rq_load_avg(rq_clock_task(rq), cpu_of(rq), rt_rq,
+					rq->curr->sched_class == &rt_sched_class);
+
 	return p;
 }
 
 static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
 {
 	update_curr_rt(rq);
+
+	update_rt_rq_load_avg(rq_clock_task(rq), cpu_of(rq), &rq->rt, 1);
 
 	/*
 	 * The previous task needs to be made eligible for pushing
@@ -1717,20 +1886,114 @@ static struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
 	return NULL;
 }
 
-#ifdef CONFIG_SCHED_CORE_ROTATE
-static int rotate_cpu_start;
-static DEFINE_SPINLOCK(rotate_lock);
-static unsigned long avoid_prev_cpu_last;
+static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
 
-static struct find_first_cpu_bit_env first_cpu_bit_env = {
-	.avoid_prev_cpu_last = &avoid_prev_cpu_last,
-	.rotate_cpu_start = &rotate_cpu_start,
-	.interval = HZ,
-	.rotate_lock = &rotate_lock,
-};
+static int rt_energy_aware_wake_cpu(struct task_struct *task)
+{
+	struct sched_domain *sd;
+	struct sched_group *sg;
+	struct cpumask *lowest_mask = this_cpu_cpumask_var_ptr(local_cpu_mask);
+	int cpu, best_cpu = -1;
+	unsigned long best_capacity = ULONG_MAX;
+	unsigned long util, best_cpu_util = ULONG_MAX;
+	unsigned long best_cpu_util_cum = ULONG_MAX;
+	unsigned long util_cum;
+	unsigned long tutil = task_util(task);
+	int best_cpu_idle_idx = INT_MAX;
+	int cpu_idle_idx = -1, start_cpu;
+#ifdef CONFIG_SCHED_WALT
+	bool boost_on_big = sched_boost() == FULL_THROTTLE_BOOST ?
+				  (sched_boost_policy() == SCHED_BOOST_ON_BIG) :
+				  false;
+#else
+	bool boost_on_big = false;
 #endif
 
-static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
+	rcu_read_lock();
+
+	start_cpu = cpu_rq(smp_processor_id())->rd->min_cap_orig_cpu;
+	if (start_cpu < 0)
+		goto unlock;
+
+	sd = rcu_dereference(per_cpu(sd_ea, start_cpu));
+	if (!sd)
+		goto unlock;
+
+retry:
+	sg = sd->groups;
+	do {
+		int fcpu = group_first_cpu(sg);
+		int capacity_orig = capacity_orig_of(fcpu);
+
+		if (boost_on_big) {
+			if (is_min_capacity_cpu(fcpu))
+				continue;
+		} else {
+			if (capacity_orig > best_capacity)
+				continue;
+		}
+
+		for_each_cpu_and(cpu, lowest_mask, sched_group_cpus(sg)) {
+			if (cpu_isolated(cpu))
+				continue;
+
+			if (sched_cpu_high_irqload(cpu))
+				continue;
+
+			util = cpu_util(cpu);
+
+			if (__cpu_overutilized(cpu, util + tutil))
+				continue;
+
+			/* Find the least loaded CPU */
+			if (util > best_cpu_util)
+				continue;
+
+			/*
+			 * If the previous CPU has same load, keep it as
+			 * best_cpu.
+			 */
+			if (best_cpu_util == util && best_cpu == task_cpu(task))
+				continue;
+
+			/*
+			 * If candidate CPU is the previous CPU, select it.
+			 * Otherwise, if its load is same with best_cpu and in
+			 * a shallower C-state, select it.  If all above
+			 * conditions are same, select the least cumulative
+			 * window demand CPU.
+			 */
+			if (sysctl_sched_cstate_aware)
+				cpu_idle_idx = idle_get_state_idx(cpu_rq(cpu));
+
+			util_cum = cpu_util_cum(cpu, 0);
+			if (cpu != task_cpu(task) && best_cpu_util == util) {
+				if (best_cpu_idle_idx < cpu_idle_idx)
+					continue;
+
+				if (best_cpu_idle_idx == cpu_idle_idx &&
+						best_cpu_util_cum < util_cum)
+					continue;
+			}
+
+			best_cpu_idle_idx = cpu_idle_idx;
+			best_cpu_util_cum = util_cum;
+			best_cpu_util = util;
+			best_cpu = cpu;
+			best_capacity = capacity_orig;
+		}
+
+	} while (sg = sg->next, sg != sd->groups);
+
+	if (unlikely(boost_on_big) && best_cpu == -1) {
+		boost_on_big = false;
+		goto retry;
+	}
+
+unlock:
+	rcu_read_unlock();
+	return best_cpu;
+}
 
 static int find_lowest_rq(struct task_struct *task)
 {
@@ -1906,7 +2169,11 @@ retry:
 	}
 
 noea:
+	if (energy_aware())
+		cpu = rt_energy_aware_wake_cpu(task);
+
 	cpu = task_cpu(task);
+
 	/*
 	 * At this point we have built a mask of cpus representing the
 	 * lowest priority tasks in the system.  Now we want to elect
@@ -2452,6 +2719,13 @@ static void rq_offline_rt(struct rq *rq)
 static void switched_from_rt(struct rq *rq, struct task_struct *p)
 {
 	/*
+	 * On class switch from rt, always cancel active schedtune timers,
+	 * this handles the cases where we switch class for a task that is
+	 * already rt-dequeued but has a running timer.
+	 */
+	schedtune_dequeue_rt(rq, p);
+
+	/*
 	 * If there are other RT tasks then we will reschedule
 	 * and the scheduling of the other RT tasks will handle
 	 * the balancing. But if we are the last RT task
@@ -2568,6 +2842,7 @@ static void task_tick_rt(struct rq *rq, struct task_struct *p, int queued)
 	struct sched_rt_entity *rt_se = &p->rt;
 
 	update_curr_rt(rq);
+	update_rt_rq_load_avg(rq_clock_task(rq), cpu_of(rq), &rq->rt, 1);
 
 	watchdog(rq, p);
 

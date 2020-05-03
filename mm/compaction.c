@@ -20,6 +20,10 @@
 #include <linux/kthread.h>
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
+#include <linux/fb.h>
+#include <linux/moduleparam.h>
+#include <linux/time.h>
+#include <linux/workqueue.h>
 #include <linux/psi.h>
 #include "internal.h"
 
@@ -851,6 +855,13 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		    page_count(page) > page_mapcount(page))
 			goto isolate_fail;
 
+		/*
+		 * Only allow to migrate anonymous pages in GFP_NOFS context
+		 * because those do not depend on fs locks.
+		 */
+		if (!(cc->gfp_mask & __GFP_FS) && page_mapping(page))
+			goto isolate_fail;
+
 		/* If we already hold the lock, we can skip some rechecking */
 		if (!locked) {
 			locked = compact_trylock_irqsave(zone_lru_lock(zone),
@@ -1360,7 +1371,7 @@ static enum compact_result __compact_finished(struct zone *zone, struct compact_
 		 * other migratetype buddy lists.
 		 */
 		if (find_suitable_fallback(area, order, migratetype,
-						true, &can_steal, cc->order) != -1)
+						true, cc->order, &can_steal) != -1)
 			return COMPACT_SUCCESS;
 	}
 
@@ -1508,6 +1519,7 @@ static enum compact_result compact_zone(struct zone *zone, struct compact_contro
 	unsigned long end_pfn = zone_end_pfn(zone);
 	const int migratetype = gfpflags_to_migratetype(cc->gfp_mask);
 	const bool sync = cc->mode != MIGRATE_ASYNC;
+	ktime_t event_ts;
 
 	ret = compaction_suitable(zone, cc->order, cc->alloc_flags,
 							cc->classzone_idx);
@@ -1553,6 +1565,7 @@ static enum compact_result compact_zone(struct zone *zone, struct compact_contro
 
 	cc->last_migrated_pfn = 0;
 
+	mm_event_start(&event_ts);
 	trace_mm_compaction_begin(start_pfn, cc->migrate_pfn,
 				cc->free_pfn, end_pfn, sync);
 
@@ -1638,6 +1651,7 @@ check_drain:
 	}
 
 out:
+	mm_event_end(MM_COMPACTION, event_ts);
 	/*
 	 * Release free pages and update where the free scanner should restart,
 	 * so we don't leave any returned pages behind in the next attempt.
@@ -1710,16 +1724,20 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
 		enum compact_priority prio)
 {
-	int may_enter_fs = gfp_mask & __GFP_FS;
 	int may_perform_io = gfp_mask & __GFP_IO;
 	struct zoneref *z;
 	struct zone *zone;
 	enum compact_result rc = COMPACT_SKIPPED;
+	ktime_t event_ts;
 
-	/* Check if the GFP flags allow compaction */
-	if (!may_enter_fs || !may_perform_io)
+	/*
+	 * Check if the GFP flags allow compaction - GFP_NOIO is really
+	 * tricky context because the migration might require IO
+	 */
+	if (!may_perform_io)
 		return COMPACT_SKIPPED;
 
+	mm_event_start(&event_ts);
 	trace_mm_compaction_try_to_compact_pages(order, gfp_mask, prio);
 
 	/* Compact each zone in the list */
@@ -1769,9 +1787,51 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 			break;
 	}
 
+	mm_event_end(MM_COMPACTION, event_ts);
 	return rc;
 }
 
+static struct workqueue_struct *compaction_wq;
+static struct delayed_work compaction_work;
+static bool screen_on = true;
+static int compaction_timeout_ms = 900000;
+module_param_named(compaction_forced_timeout_ms, compaction_timeout_ms, int,
+			0644);
+static int compaction_soff_delay_ms = 3000;
+module_param_named(compaction_screen_off_delay_ms, compaction_soff_delay_ms, int,
+			0644);
+static unsigned long compaction_forced_timeout;
+
+
+static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	int *blank;
+
+	if ((event == FB_EVENT_BLANK) && evdata && evdata->data) {
+		blank = evdata->data;
+
+		switch (*blank) {
+		case FB_BLANK_POWERDOWN:
+			screen_on = false;
+			if (time_after(jiffies, compaction_forced_timeout) && !delayed_work_busy(&compaction_work)) {
+				compaction_forced_timeout = jiffies + msecs_to_jiffies(compaction_timeout_ms);
+				queue_delayed_work(compaction_wq, &compaction_work,
+					msecs_to_jiffies(compaction_soff_delay_ms));
+			}
+		break;
+		case FB_BLANK_UNBLANK:
+			screen_on = true;
+		break;
+		}
+	}
+
+	return 0;
+}
+
+static struct notifier_block compaction_notifier_block = {
+	.notifier_call = fb_notifier_callback,
+};
 
 /* Compact all zones within a node */
 static void compact_node(int nid)
@@ -1784,6 +1844,7 @@ static void compact_node(int nid)
 		.mode = MIGRATE_SYNC,
 		.ignore_skip_hint = true,
 		.whole_zone = true,
+		.gfp_mask = GFP_KERNEL,
 	};
 
 
@@ -1816,6 +1877,23 @@ static void compact_nodes(void)
 
 	for_each_online_node(nid)
 		compact_node(nid);
+}
+
+static void do_compaction(struct work_struct *work)
+{
+	/* Return early if the screen is on */
+	if (screen_on)
+		return;
+
+	pr_info("Scheduled memory compaction is starting");
+
+	/* Do full compaction */
+	compact_nodes();
+
+	/* Force compaction timeout */
+	compaction_forced_timeout = jiffies + msecs_to_jiffies(compaction_timeout_ms);
+
+	pr_info("Scheduled memory compaction is completed");
 }
 
 /* The written value is actually unused, all memory is compacted */
@@ -1909,6 +1987,7 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 		.classzone_idx = pgdat->kcompactd_classzone_idx,
 		.mode = MIGRATE_SYNC_LIGHT,
 		.ignore_skip_hint = true,
+		.gfp_mask = GFP_KERNEL,
 
 	};
 	trace_mm_compaction_kcompactd_wake(pgdat->node_id, cc.order,
@@ -2091,5 +2170,20 @@ static int __init kcompactd_init(void)
 	return 0;
 }
 subsys_initcall(kcompactd_init)
+
+static int  __init scheduled_compaction_init(void)
+{
+	compaction_wq = create_freezable_workqueue("compaction_wq");
+
+	if (!compaction_wq)
+		return -EFAULT;
+
+	INIT_DELAYED_WORK(&compaction_work, do_compaction);
+
+	fb_register_client(&compaction_notifier_block);
+
+	return 0;
+}
+late_initcall(scheduled_compaction_init);
 
 #endif /* CONFIG_COMPACTION */

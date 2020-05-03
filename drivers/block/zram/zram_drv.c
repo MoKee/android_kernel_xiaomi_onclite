@@ -728,10 +728,7 @@ static ssize_t writeback_store(struct device *dev,
 			continue;
 		}
 
-		bio_init(&bio);
-
-		bio.bi_max_vecs = 1;
-		bio.bi_io_vec = &bvec;
+		bio_init(&bio, &bvec, 1);
 		bio.bi_bdev = zram->bdev;
 
 		bio.bi_iter.bi_sector = blk_idx * (PAGE_SIZE >> 9);
@@ -1015,6 +1012,7 @@ static ssize_t comp_algorithm_show(struct device *dev,
 static ssize_t comp_algorithm_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t len)
 {
+#if 0
 	struct zram *zram = dev_to_zram(dev);
 	char compressor[ARRAY_SIZE(zram->compressor)];
 	size_t sz;
@@ -1037,6 +1035,7 @@ static ssize_t comp_algorithm_store(struct device *dev,
 
 	strcpy(zram->compressor, compressor);
 	up_write(&zram->init_lock);
+#endif
 	return len;
 }
 
@@ -1977,7 +1976,7 @@ static int zram_add(void)
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, zram->disk->queue);
 
 	zram->disk->queue->backing_dev_info->capabilities |=
-					BDI_CAP_STABLE_WRITES;
+			(BDI_CAP_STABLE_WRITES | BDI_CAP_SYNCHRONOUS_IO);
 
 	disk_to_dev(zram->disk)->groups = zram_disk_attr_groups;
 	add_disk(zram->disk);

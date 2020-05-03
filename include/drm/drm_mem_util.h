@@ -37,8 +37,7 @@ static __inline__ void *drm_calloc_large(size_t nmemb, size_t size)
 	if (size * nmemb <= PAGE_SIZE)
 	    return kcalloc(nmemb, size, GFP_KERNEL);
 
-	return __vmalloc(size * nmemb,
-			 GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO, PAGE_KERNEL);
+	return vzalloc(size * nmemb);
 }
 
 /* Modeled after cairo's malloc_ab, it's like calloc but without the zeroing. */
@@ -50,8 +49,7 @@ static __inline__ void *drm_malloc_ab(size_t nmemb, size_t size)
 	if (size * nmemb <= PAGE_SIZE)
 	    return kmalloc(nmemb * size, GFP_KERNEL);
 
-	return __vmalloc(size * nmemb,
-			 GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL);
+	return vmalloc(size * nmemb);
 }
 
 static __inline__ void *drm_malloc_gfp(size_t nmemb, size_t size, gfp_t gfp)
@@ -69,13 +67,32 @@ static __inline__ void *drm_malloc_gfp(size_t nmemb, size_t size, gfp_t gfp)
 			return ptr;
 	}
 
-	return __vmalloc(size * nmemb,
-			 gfp | __GFP_HIGHMEM, PAGE_KERNEL);
+	return __vmalloc(size * nmemb, gfp, PAGE_KERNEL);
 }
 
 static __inline void drm_free_large(void *ptr)
 {
 	kvfree(ptr);
+}
+
+static __inline void *drm_kvzalloc(size_t size, gfp_t flags)
+{
+	gfp_t alloc_flags = flags;
+	void *ret;
+
+	if (size > PAGE_SIZE)
+		alloc_flags |= __GFP_NORETRY | __GFP_NOWARN;
+
+	ret = kzalloc(size, alloc_flags);
+
+	/*
+	 * It doesn't really make sense to fallback to vmalloc for sub page
+	 * requests
+	 */
+	if (ret || size <= PAGE_SIZE)
+		return ret;
+
+	return vzalloc(size);
 }
 
 #endif

@@ -1397,8 +1397,10 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 	dir = debugfs_create_dir(display->name, NULL);
 	if (IS_ERR_OR_NULL(dir)) {
 		rc = PTR_ERR(dir);
+#ifdef CONFIG_DEBUG_FS
 		pr_err("[%s] debugfs create dir failed, rc = %d\n",
 		       display->name, rc);
+#endif
 		goto error;
 	}
 
@@ -4686,22 +4688,27 @@ static DEVICE_ATTR(dynamic_dsi_clock, 0644,
 			sysfs_dynamic_dsi_clk_read,
 			sysfs_dynamic_dsi_clk_write);
 
-static struct attribute *dynamic_dsi_clock_fs_attrs[] = {
+static struct attribute *dsi_sysfs_attrs[] = {
 	&dev_attr_dynamic_dsi_clock.attr,
 	NULL,
 };
-static struct attribute_group dynamic_dsi_clock_fs_attrs_group = {
-	.attrs = dynamic_dsi_clock_fs_attrs,
+static struct attribute_group dsi_sysfs_attrs_group = {
+	.attrs = dsi_sysfs_attrs,
 };
 
-static int dsi_display_sysfs_init(struct dsi_display *display)
+static int dsi_display_sysfs_init(struct dsi_display *display,
+		struct device *master)
 {
 	int rc = 0;
 	struct device *dev = &display->pdev->dev;
 
-	if (display->panel->panel_mode == DSI_OP_CMD_MODE)
-		rc = sysfs_create_group(&dev->kobj,
-			&dynamic_dsi_clock_fs_attrs_group);
+	if (display->panel->panel_mode == DSI_OP_CMD_MODE) {
+		rc = sysfs_create_group(&dev->kobj, &dsi_sysfs_attrs_group);
+		if (rc == 0 && display == primary_display)
+			rc = sysfs_create_link(&master->kobj,
+					&dev->kobj, "main_display");
+	}
+
 	pr_debug("[%s] dsi_display_sysfs_init:%d,panel mode:%d\n",
 		display->name, rc, display->panel->panel_mode);
 	return rc;
@@ -4713,9 +4720,7 @@ static int dsi_display_sysfs_deinit(struct dsi_display *display)
 	struct device *dev = &display->pdev->dev;
 
 	if (display->panel->panel_mode == DSI_OP_CMD_MODE)
-		sysfs_remove_group(&dev->kobj,
-			&dynamic_dsi_clock_fs_attrs_group);
-
+		sysfs_remove_group(&dev->kobj, &dsi_sysfs_attrs_group);
 	return 0;
 
 }
@@ -4761,16 +4766,12 @@ static int dsi_display_bind(struct device *dev,
 
 	mutex_lock(&display->display_lock);
 
-	rc = dsi_display_debugfs_init(display);
-	if (rc) {
-		pr_err("[%s] debugfs init failed, rc=%d\n", display->name, rc);
-		goto error;
-	}
+	dsi_display_debugfs_init(display);
 
 	atomic_set(&display->clkrate_change_pending, 0);
 	display->cached_clk_rate = 0;
 
-	rc = dsi_display_sysfs_init(display);
+	rc = dsi_display_sysfs_init(display, master);
 	if (rc) {
 		pr_err("[%s] sysfs init failed, rc=%d\n", display->name, rc);
 		goto error;
@@ -6274,7 +6275,8 @@ int dsi_display_prepare(struct dsi_display *display)
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		if (display->is_cont_splash_enabled) {
 			pr_err("DMS is not supposed to be set on first frame\n");
-			return -EINVAL;
+			rc = -EINVAL;
+			goto error;
 		}
 		/* update dsi ctrl for new mode */
 		rc = dsi_display_pre_switch(display);
@@ -6704,6 +6706,12 @@ int dsi_display_enable(struct dsi_display *display)
 		rc = -EINVAL;
 		goto error_disable_panel;
 	}
+
+	rc = dsi_display_set_backlight(display,
+				       display->panel->bl_config.bl_level);
+	if (rc)
+		pr_warn("[%s]failed to restore previous brightness, rc=%d\n",
+			display->name, rc);
 
 	goto error;
 
