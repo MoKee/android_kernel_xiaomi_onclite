@@ -92,13 +92,20 @@ static int rk3399_dmcfreq_target(struct device *dev, unsigned long *freq,
 	unsigned long target_volt, target_rate;
 	int err;
 
+	rcu_read_lock();
 	opp = devfreq_recommended_opp(dev, freq, flags);
-	if (IS_ERR(opp))
+	if (IS_ERR(opp)) {
+		rcu_read_unlock();
 		return PTR_ERR(opp);
+	}
 
 	target_rate = dev_pm_opp_get_freq(opp);
 	target_volt = dev_pm_opp_get_voltage(opp);
-	dev_pm_opp_put(opp);
+
+	dmcfreq->rate = dev_pm_opp_get_freq(dmcfreq->curr_opp);
+	dmcfreq->volt = dev_pm_opp_get_voltage(dmcfreq->curr_opp);
+
+	rcu_read_unlock();
 
 	if (dmcfreq->rate == target_rate)
 		return 0;
@@ -418,13 +425,14 @@ static int rk3399_dmcfreq_probe(struct platform_device *pdev)
 
 	data->rate = clk_get_rate(data->dmc_clk);
 
+	rcu_read_lock();
 	opp = devfreq_recommended_opp(dev, &data->rate, 0);
-	if (IS_ERR(opp))
+	if (IS_ERR(opp)) {
+		rcu_read_unlock();
 		return PTR_ERR(opp);
-
-	data->rate = dev_pm_opp_get_freq(opp);
-	data->volt = dev_pm_opp_get_voltage(opp);
-	dev_pm_opp_put(opp);
+	}
+	rcu_read_unlock();
+	data->curr_opp = opp;
 
 	rk3399_devfreq_dmc_profile.initial_freq = data->rate;
 

@@ -149,6 +149,7 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 	struct private_data *priv;
 	struct device *cpu_dev;
 	struct clk *cpu_clk;
+	struct dev_pm_opp *suspend_opp;
 	unsigned int transition_latency;
 	bool fallback = false;
 	const char *name;
@@ -188,7 +189,7 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 	 */
 	name = find_supply_name(cpu_dev);
 	if (name) {
-		opp_table = dev_pm_opp_set_regulators(cpu_dev, &name, 1);
+		opp_table = dev_pm_opp_set_regulator(cpu_dev, name);
 		if (IS_ERR(opp_table)) {
 			ret = PTR_ERR(opp_table);
 			dev_err(cpu_dev, "Failed to set regulator for cpu%d: %d\n",
@@ -243,15 +244,6 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 				__func__, ret);
 	}
 
-	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-	if (!priv) {
-		ret = -ENOMEM;
-		goto out_free_opp;
-	}
-
-	priv->reg_name = name;
-	priv->opp_table = opp_table;
-
 	ret = dev_pm_opp_init_cpufreq_table(cpu_dev, &freq_table);
 	if (ret) {
 		dev_err(cpu_dev, "failed to init cpufreq table: %d\n", ret);
@@ -262,7 +254,11 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 	policy->driver_data = priv;
 	policy->clk = cpu_clk;
 
-	policy->suspend_freq = dev_pm_opp_get_suspend_opp_freq(cpu_dev) / 1000;
+	rcu_read_lock();
+	suspend_opp = dev_pm_opp_get_suspend_opp(cpu_dev);
+	if (suspend_opp)
+		policy->suspend_freq = dev_pm_opp_get_freq(suspend_opp) / 1000;
+	rcu_read_unlock();
 
 	ret = cpufreq_table_validate_and_show(policy, freq_table);
 	if (ret) {
@@ -304,7 +300,7 @@ out_free_opp:
 	kfree(priv);
 out_put_regulator:
 	if (name)
-		dev_pm_opp_put_regulators(opp_table);
+		dev_pm_opp_put_regulator(opp_table);
 out_put_clk:
 	clk_put(cpu_clk);
 
@@ -320,7 +316,7 @@ static int cpufreq_exit(struct cpufreq_policy *policy)
 	if (priv->have_static_opps)
 		dev_pm_opp_of_cpumask_remove_table(policy->related_cpus);
 	if (priv->reg_name)
-		dev_pm_opp_put_regulators(priv->opp_table);
+		dev_pm_opp_put_regulator(priv->opp_table);
 
 	clk_put(policy->clk);
 	kfree(priv);

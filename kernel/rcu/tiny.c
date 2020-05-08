@@ -25,7 +25,7 @@
 #include <linux/completion.h>
 #include <linux/interrupt.h>
 #include <linux/notifier.h>
-#include <linux/rcupdate_wait.h>
+#include <linux/rcupdate.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/mutex.h>
@@ -56,17 +56,6 @@ static struct rcu_ctrlblk rcu_bh_ctrlblk = {
 	.curtail	= &rcu_bh_ctrlblk.rcucblist,
 };
 
-void rcu_barrier_bh(void)
-{
-	wait_rcu_gp(call_rcu_bh);
-}
-EXPORT_SYMBOL(rcu_barrier_bh);
-
-void rcu_barrier_sched(void)
-{
-	wait_rcu_gp(call_rcu_sched);
-}
-EXPORT_SYMBOL(rcu_barrier_sched);
 
 /*
  * Helper function for rcu_sched_qs() and rcu_bh_qs().
@@ -122,8 +111,10 @@ void rcu_check_callbacks(int user)
 {
 	if (user)
 		rcu_sched_qs();
-	if (user || !in_softirq())
+	else if (!in_softirq())
 		rcu_bh_qs();
+	if (user)
+		rcu_note_voluntary_context_switch(current);
 }
 
 /*

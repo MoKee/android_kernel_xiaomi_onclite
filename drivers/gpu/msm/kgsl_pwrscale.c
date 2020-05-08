@@ -463,6 +463,51 @@ int kgsl_devfreq_get_cur_freq(struct device *dev, unsigned long *freq)
 EXPORT_SYMBOL(kgsl_devfreq_get_cur_freq);
 
 /*
+ * kgsl_devfreq_add_notifier - add a fine grained notifier.
+ * @dev: The device
+ * @nb: Notifier block that will receive updates.
+ *
+ * Add a notifier to receive ADRENO_DEVFREQ_NOTIFY_* events
+ * from the device.
+ */
+int kgsl_devfreq_add_notifier(struct device *dev,
+		struct notifier_block *nb)
+{
+	struct kgsl_device *device = dev_get_drvdata(dev);
+
+	if (device == NULL)
+		return -ENODEV;
+
+	if (nb == NULL)
+		return -EINVAL;
+
+	return srcu_notifier_chain_register(&device->pwrscale.nh, nb);
+}
+EXPORT_SYMBOL(kgsl_devfreq_add_notifier);
+
+/*
+ * kgsl_devfreq_del_notifier - remove a fine grained notifier.
+ * @dev: The device
+ * @nb: The notifier block.
+ *
+ * Remove a notifier registered with kgsl_devfreq_add_notifier().
+ */
+int kgsl_devfreq_del_notifier(struct device *dev, struct notifier_block *nb)
+{
+	struct kgsl_device *device = dev_get_drvdata(dev);
+
+	if (device == NULL)
+		return -ENODEV;
+
+	if (nb == NULL)
+		return -EINVAL;
+
+	return srcu_notifier_chain_unregister(&device->pwrscale.nh, nb);
+}
+EXPORT_SYMBOL(kgsl_devfreq_del_notifier);
+
+
+/*
  * kgsl_busmon_get_dev_status - devfreq_dev_profile.get_dev_status callback
  * @dev: see devfreq.h
  * @freq: see devfreq.h
@@ -605,7 +650,7 @@ int kgsl_busmon_get_cur_freq(struct device *dev, unsigned long *freq)
 static int opp_notify(struct notifier_block *nb,
 	unsigned long type, void *in_opp)
 {
-	int level, min_level, max_level;
+	int result = -EINVAL, level, min_level, max_level;
 	struct kgsl_pwrctrl *pwr = container_of(nb, struct kgsl_pwrctrl, nb);
 	struct kgsl_device *device = container_of(pwr,
 			struct kgsl_device, pwrctrl);
@@ -614,19 +659,20 @@ static int opp_notify(struct notifier_block *nb,
 	unsigned long min_freq = 0, max_freq = pwr->pwrlevels[0].gpu_freq;
 
 	if (type != OPP_EVENT_ENABLE && type != OPP_EVENT_DISABLE)
-		return -EINVAL;
+		return result;
 
+	rcu_read_lock();
 	opp = dev_pm_opp_find_freq_floor(dev, &max_freq);
-	if (IS_ERR(opp))
+	if (IS_ERR(opp)) {
+		rcu_read_unlock();
 		return PTR_ERR(opp);
-
-	dev_pm_opp_put(opp);
+	}
 
 	opp = dev_pm_opp_find_freq_ceil(dev, &min_freq);
 	if (IS_ERR(opp))
 		min_freq = pwr->pwrlevels[pwr->min_pwrlevel].gpu_freq;
-	else
-		dev_pm_opp_put(opp);
+
+	rcu_read_unlock();
 
 	mutex_lock(&device->mutex);
 
@@ -651,6 +697,55 @@ static int opp_notify(struct notifier_block *nb,
 	return 0;
 }
 
+/*
+ * kgsl_opp_add_notifier - add a fine grained notifier.
+ * @dev: The device
+ * @nb: Notifier block that will receive updates.
+ *
+ * Add a notifier to receive GPU OPP_EVENT_* events
+ * from the OPP framework.
+ */
+static int kgsl_opp_add_notifier(struct device *dev,
+		struct notifier_block *nb)
+{
+	struct srcu_notifier_head *nh;
+	int ret = 0;
+
+	rcu_read_lock();
+	nh = dev_pm_opp_get_notifier(dev);
+	if (IS_ERR(nh))
+		ret = PTR_ERR(nh);
+	rcu_read_unlock();
+	if (!ret)
+		ret = srcu_notifier_chain_register(nh, nb);
+
+	return ret;
+}
+
+/*
+ * kgsl_opp_remove_notifier - remove registered opp event notifier.
+ * @dev: The device
+ * @nb: Notifier block that will receive updates.
+ *
+ * Remove gpu notifier that receives GPU OPP_EVENT_* events
+ * from the OPP framework.
+ */
+static int kgsl_opp_remove_notifier(struct device *dev,
+		struct notifier_block *nb)
+{
+	struct srcu_notifier_head *nh;
+	int ret = 0;
+
+	rcu_read_lock();
+	nh = dev_pm_opp_get_notifier(dev);
+	if (IS_ERR(nh))
+		ret = PTR_ERR(nh);
+	rcu_read_unlock();
+	if (!ret)
+		ret = srcu_notifier_chain_unregister(nh, nb);
+
+	return ret;
+}
 
 /*
  * kgsl_pwrscale_init - Initialize pwrscale.
@@ -682,7 +777,9 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 
 	pwr->nb.notifier_call = opp_notify;
 
-	dev_pm_opp_register_notifier(dev, &pwr->nb);
+	kgsl_opp_add_notifier(dev, &pwr->nb);
+
+	srcu_init_notifier_head(&pwrscale->nh);
 
 	profile->initial_freq =
 		pwr->pwrlevels[pwr->num_pwrlevels - 1].gpu_freq;
@@ -840,7 +937,8 @@ void kgsl_pwrscale_close(struct kgsl_device *device)
 	kgsl_midframe = NULL;
 	device->pwrscale.bus_devfreq = NULL;
 	device->pwrscale.devfreqptr = NULL;
-	dev_pm_opp_unregister_notifier(&device->pdev->dev, &pwr->nb);
+	srcu_cleanup_notifier_head(&device->pwrscale.nh);
+	kgsl_opp_remove_notifier(&device->pdev->dev, &pwr->nb);
 	for (i = 0; i < KGSL_PWREVENT_MAX; i++)
 		kfree(pwrscale->history[i].events);
 }

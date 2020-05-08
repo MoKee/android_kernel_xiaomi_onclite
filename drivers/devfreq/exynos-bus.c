@@ -103,17 +103,19 @@ static int exynos_bus_target(struct device *dev, unsigned long *freq, u32 flags)
 	int ret = 0;
 
 	/* Get new opp-bus instance according to new bus clock */
+	rcu_read_lock();
 	new_opp = devfreq_recommended_opp(dev, freq, flags);
 	if (IS_ERR(new_opp)) {
 		dev_err(dev, "failed to get recommended opp instance\n");
+		rcu_read_unlock();
 		return PTR_ERR(new_opp);
 	}
 
 	new_freq = dev_pm_opp_get_freq(new_opp);
 	new_volt = dev_pm_opp_get_voltage(new_opp);
-	dev_pm_opp_put(new_opp);
-
-	old_freq = bus->curr_freq;
+	old_freq = dev_pm_opp_get_freq(bus->curr_opp);
+	old_volt = dev_pm_opp_get_voltage(bus->curr_opp);
+	rcu_read_unlock();
 
 	if (old_freq == new_freq)
 		return 0;
@@ -214,16 +216,17 @@ static int exynos_bus_passive_target(struct device *dev, unsigned long *freq,
 	int ret = 0;
 
 	/* Get new opp-bus instance according to new bus clock */
+	rcu_read_lock();
 	new_opp = devfreq_recommended_opp(dev, freq, flags);
 	if (IS_ERR(new_opp)) {
 		dev_err(dev, "failed to get recommended opp instance\n");
+		rcu_read_unlock();
 		return PTR_ERR(new_opp);
 	}
 
 	new_freq = dev_pm_opp_get_freq(new_opp);
-	dev_pm_opp_put(new_opp);
-
-	old_freq = bus->curr_freq;
+	old_freq = dev_pm_opp_get_freq(bus->curr_opp);
+	rcu_read_unlock();
 
 	if (old_freq == new_freq)
 		return 0;
@@ -357,15 +360,14 @@ static int exynos_bus_parse_of(struct device_node *np,
 	}
 
 	rate = clk_get_rate(bus->clk);
-
-	opp = devfreq_recommended_opp(dev, &rate, 0);
-	if (IS_ERR(opp)) {
+	bus->curr_opp = devfreq_recommended_opp(dev, &rate, 0);
+	if (IS_ERR(bus->curr_opp)) {
 		dev_err(dev, "failed to find dev_pm_opp\n");
-		ret = PTR_ERR(opp);
+		rcu_read_unlock();
+		ret = PTR_ERR(bus->curr_opp);
 		goto err_opp;
 	}
-	bus->curr_freq = dev_pm_opp_get_freq(opp);
-	dev_pm_opp_put(opp);
+	rcu_read_unlock();
 
 	return 0;
 

@@ -160,7 +160,6 @@ static int sti_cpufreq_set_opp_info(void)
 	int pcode, substrate, major, minor;
 	int ret;
 	char name[MAX_PCODE_NAME_LEN];
-	struct opp_table *opp_table;
 
 	reg_fields = sti_cpufreq_match();
 	if (!reg_fields) {
@@ -212,20 +211,20 @@ use_defaults:
 
 	snprintf(name, MAX_PCODE_NAME_LEN, "pcode%d", pcode);
 
-	opp_table = dev_pm_opp_set_prop_name(dev, name);
-	if (IS_ERR(opp_table)) {
+	ret = dev_pm_opp_set_prop_name(dev, name);
+	if (ret) {
 		dev_err(dev, "Failed to set prop name\n");
-		return PTR_ERR(opp_table);
+		return ret;
 	}
 
 	version[0] = BIT(major);
 	version[1] = BIT(minor);
 	version[2] = BIT(substrate);
 
-	opp_table = dev_pm_opp_set_supported_hw(dev, version, VERSION_ELEMENTS);
-	if (IS_ERR(opp_table)) {
+	ret = dev_pm_opp_set_supported_hw(dev, version, VERSION_ELEMENTS);
+	if (ret) {
 		dev_err(dev, "Failed to set supported hardware\n");
-		return PTR_ERR(opp_table);
+		return ret;
 	}
 
 	dev_dbg(dev, "pcode: %d major: %d minor: %d substrate: %d\n",

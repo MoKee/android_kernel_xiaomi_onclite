@@ -180,16 +180,107 @@ static struct attribute_group crash_note_cpu_attr_group = {
 };
 #endif
 
+#ifdef CONFIG_HOTPLUG_CPU
+
+static ssize_t isolate_show(struct device *dev,
+			    struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	int cpuid = cpu->dev.id;
+	unsigned int isolated = cpu_isolated(cpuid);
+
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", isolated);
+
+	return rc;
+}
+
+static DEVICE_ATTR_RO(isolate);
+
+static struct attribute *cpu_isolated_attrs[] = {
+	&dev_attr_isolate.attr,
+	NULL
+};
+
+static struct attribute_group cpu_isolated_attr_group = {
+	.attrs = cpu_isolated_attrs,
+};
+
+#endif
+
+static ssize_t show_sched_load_boost(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	ssize_t rc;
+	unsigned int boost;
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+
+	boost = per_cpu(sched_load_boost, cpuid);
+	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", boost);
+
+	return rc;
+}
+
+static ssize_t __ref store_sched_load_boost(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	int err;
+	int boost;
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+
+	err = kstrtoint(strstrip((char *)buf), 0, &boost);
+	if (err)
+		return err;
+
+	/*
+	 * -100 is low enough to cancel out CPU's load and make it near zro.
+	 * 1000 is close to the maximum value that cpu_util_freq_{walt,pelt}
+	 * can take without overflow.
+	 */
+	if (boost < -100 || boost > 1000)
+		return -EINVAL;
+
+	per_cpu(sched_load_boost, cpuid) = boost;
+
+	return count;
+}
+
+static DEVICE_ATTR(sched_load_boost, 0644,
+		   show_sched_load_boost,
+		   store_sched_load_boost);
+
+static struct attribute *sched_cpu_attrs[] = {
+	&dev_attr_sched_load_boost.attr,
+	NULL
+};
+
+static struct attribute_group sched_cpu_attr_group = {
+	.attrs = sched_cpu_attrs,
+};
+
 static const struct attribute_group *common_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
+#ifdef CONFIG_HOTPLUG_CPU
+	&cpu_isolated_attr_group,
+#endif
+	&sched_cpu_attr_group,
+	NULL
 };
 
 static const struct attribute_group *hotplugable_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
+#ifdef CONFIG_HOTPLUG_CPU
+	&cpu_isolated_attr_group,
+#endif
+	&sched_cpu_attr_group,
+	NULL
 };
 
 /*
@@ -218,6 +309,7 @@ static struct cpu_attr cpu_attrs[] = {
 	_CPU_ATTR(online, &__cpu_online_mask),
 	_CPU_ATTR(possible, &__cpu_possible_mask),
 	_CPU_ATTR(present, &__cpu_present_mask),
+	_CPU_ATTR(core_ctl_isolated, &__cpu_isolated_mask),
 };
 
 /*
@@ -253,9 +345,9 @@ static ssize_t print_cpus_offline(struct device *dev,
 			buf[n++] = ',';
 
 		if (nr_cpu_ids == total_cpus-1)
-			n += snprintf(&buf[n], len - n, "%u", nr_cpu_ids);
+			n += snprintf(&buf[n], len - n, "%d", nr_cpu_ids);
 		else
-			n += snprintf(&buf[n], len - n, "%u-%d",
+			n += snprintf(&buf[n], len - n, "%d-%d",
 						      nr_cpu_ids, total_cpus-1);
 	}
 
@@ -445,7 +537,6 @@ EXPORT_SYMBOL_GPL(cpu_device_create);
 static DEVICE_ATTR(modalias, 0444, print_cpu_modalias, NULL);
 #endif
 
-
 static struct attribute *cpu_root_attrs[] = {
 #ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
 	&dev_attr_probe.attr,
@@ -454,8 +545,10 @@ static struct attribute *cpu_root_attrs[] = {
 	&cpu_attrs[0].attr.attr,
 	&cpu_attrs[1].attr.attr,
 	&cpu_attrs[2].attr.attr,
+	&cpu_attrs[3].attr.attr,
 	&dev_attr_kernel_max.attr,
 	&dev_attr_offline.attr,
+	&dev_attr_isolated.attr,
 #ifdef CONFIG_NO_HZ_FULL
 	&dev_attr_nohz_full.attr,
 #endif

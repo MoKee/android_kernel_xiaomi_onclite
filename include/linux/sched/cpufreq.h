@@ -4,17 +4,15 @@
 #include <linux/types.h>
 
 #define SCHED_CPUFREQ_IOWAIT	(1U << 0)
-#define SCHED_CPUFREQ_MIGRATION	(1U << 1)
-
+#define SCHED_CPUFREQ_DL	(1U << 1)
 #define SCHED_CPUFREQ_INTERCLUSTER_MIG (1U << 3)
 #define SCHED_CPUFREQ_RESERVED (1U << 4)
+#define SCHED_CPUFREQ_PL	(1U << 5)
 #define SCHED_CPUFREQ_EARLY_DET	(1U << 6)
 #define SCHED_CPUFREQ_FORCE_UPDATE (1U << 7)
 #define SCHED_CPUFREQ_CONTINUE (1U << 8)
 
 #ifdef CONFIG_CPU_FREQ
-struct cpufreq_policy;
-
 struct update_util_data {
        void (*func)(struct update_util_data *data, u64 time, unsigned int flags);
 };
@@ -29,8 +27,6 @@ static inline unsigned long map_util_freq(unsigned long util,
 {
 	return (freq + (freq >> 2)) * util / cap;
 }
-
-bool cpufreq_this_cpu_can_update(struct cpufreq_policy *policy);
 #endif /* CONFIG_CPU_FREQ */
 
 #endif /* _LINUX_SCHED_CPUFREQ_H */

@@ -19,6 +19,7 @@
 #include <linux/debugfs.h>
 
 #include "sched.h"
+#include "walt.h"
 
 static DEFINE_SPINLOCK(sched_debug_lock);
 
@@ -180,15 +181,10 @@ static const struct file_operations sched_feat_fops = {
 	.release	= single_release,
 };
 
-__read_mostly bool sched_debug_enabled;
-
 static __init int sched_init_debug(void)
 {
 	debugfs_create_file("sched_features", 0644, NULL, NULL,
 			&sched_feat_fops);
-
-	debugfs_create_bool("sched_debug", 0644, NULL,
-			&sched_debug_enabled);
 
 	return 0;
 }
@@ -394,71 +390,29 @@ static struct ctl_table *sd_alloc_ctl_cpu_table(int cpu)
 	return table;
 }
 
-static cpumask_var_t sd_sysctl_cpus;
 static struct ctl_table_header *sd_sysctl_header;
-
 void register_sched_domain_sysctl(void)
 {
-	static struct ctl_table *cpu_entries;
-	static struct ctl_table **cpu_idx;
+	int i, cpu_num = num_possible_cpus();
+	struct ctl_table *entry = sd_alloc_ctl_entry(cpu_num + 1);
 	char buf[32];
-	int i;
 
-	if (!cpu_entries) {
-		cpu_entries = sd_alloc_ctl_entry(num_possible_cpus() + 1);
-		if (!cpu_entries)
-			return;
+	WARN_ON(sd_ctl_dir[0].child);
+	sd_ctl_dir[0].child = entry;
 
-		WARN_ON(sd_ctl_dir[0].child);
-		sd_ctl_dir[0].child = cpu_entries;
-	}
+	if (entry == NULL)
+		return;
 
-	if (!cpu_idx) {
-		struct ctl_table *e = cpu_entries;
-
-		cpu_idx = kcalloc(nr_cpu_ids, sizeof(struct ctl_table*), GFP_KERNEL);
-		if (!cpu_idx)
-			return;
-
-		/* deal with sparse possible map */
-		for_each_possible_cpu(i) {
-			cpu_idx[i] = e;
-			e++;
-		}
-	}
-
-	if (!cpumask_available(sd_sysctl_cpus)) {
-		if (!alloc_cpumask_var(&sd_sysctl_cpus, GFP_KERNEL))
-			return;
-
-		/* init to possible to not have holes in @cpu_entries */
-		cpumask_copy(sd_sysctl_cpus, cpu_possible_mask);
-	}
-
-	for_each_cpu(i, sd_sysctl_cpus) {
-		struct ctl_table *e = cpu_idx[i];
-
-		if (e->child)
-			sd_free_ctl_entry(&e->child);
-
-		if (!e->procname) {
-			snprintf(buf, 32, "cpu%d", i);
-			e->procname = kstrdup(buf, GFP_KERNEL);
-		}
-		e->mode = 0555;
-		e->child = sd_alloc_ctl_cpu_table(i);
-
-		__cpumask_clear_cpu(i, sd_sysctl_cpus);
+	for_each_possible_cpu(i) {
+		snprintf(buf, 32, "cpu%d", i);
+		entry->procname = kstrdup(buf, GFP_KERNEL);
+		entry->mode = 0555;
+		entry->child = sd_alloc_ctl_cpu_table(i);
+		entry++;
 	}
 
 	WARN_ON(sd_sysctl_header);
 	sd_sysctl_header = register_sysctl_table(sd_ctl_root);
-}
-
-void dirty_sched_domain_sysctl(int cpu)
-{
-	if (cpumask_available(sd_sysctl_cpus))
-		__cpumask_set_cpu(cpu, sd_sysctl_cpus);
 }
 
 /* may be called multiple times per register */
@@ -466,6 +420,8 @@ void unregister_sched_domain_sysctl(void)
 {
 	unregister_sysctl_table(sd_sysctl_header);
 	sd_sysctl_header = NULL;
+	if (sd_ctl_dir[0].child)
+		sd_free_ctl_entry(&sd_ctl_dir[0].child);
 }
 #endif /* CONFIG_SYSCTL */
 #endif /* CONFIG_SMP */
@@ -727,6 +683,8 @@ do {									\
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", #x, SPLIT_NS(rq->x))
 
 	P(nr_running);
+	SEQ_printf(m, "  .%-30s: %lu\n", "load",
+		   rq->load.weight);
 	P(nr_switches);
 	P(nr_load_updates);
 	P(nr_uninterruptible);
@@ -741,6 +699,20 @@ do {									\
 	P(cpu_load[4]);
 #ifdef CONFIG_SMP
 	P(cpu_capacity);
+#endif
+#ifdef CONFIG_SCHED_WALT
+	P(cluster->load_scale_factor);
+	P(cluster->capacity);
+	P(cluster->max_possible_capacity);
+	P(cluster->efficiency);
+	P(cluster->cur_freq);
+	P(cluster->max_freq);
+	P(cluster->exec_scale_factor);
+#ifdef CONFIG_SCHED_WALT
+	P(walt_stats.nr_big_tasks);
+#endif
+	SEQ_printf(m, "  .%-30s: %llu\n", "walt_stats.cumulative_runnable_avg",
+			rq->walt_stats.cumulative_runnable_avg);
 #endif
 #undef P
 #undef PN
@@ -820,6 +792,12 @@ static void sched_debug_header(struct seq_file *m)
 	PN(sysctl_sched_wakeup_granularity);
 	P(sysctl_sched_child_runs_first);
 	P(sysctl_sched_features);
+#ifdef CONFIG_SCHED_WALT
+	P(min_capacity);
+	P(max_capacity);
+	P(sched_ravg_window);
+	P(sched_load_granule);
+#endif
 #undef PN
 #undef P
 
@@ -1066,6 +1044,9 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 		P_SCHEDSTAT(se.statistics.nr_wakeups_cas_attempts);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_cas_count);
  
+#ifdef CONFIG_SCHED_WALT
+		P(ravg.demand);
+#endif
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)
 			avg_atom = div64_ul(avg_atom, nr_switches);

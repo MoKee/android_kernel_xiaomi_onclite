@@ -44,8 +44,6 @@
 #include <asm/processor.h>
 #include <linux/cpumask.h>
 
-bool rcu_irq_enter_disabled(void);
-
 #define ULONG_CMP_GE(a, b)	(ULONG_MAX / 2 >= (a) - (b))
 #define ULONG_CMP_LT(a, b)	(ULONG_MAX / 2 < (a) - (b))
 #define ulong2long(a)		(*(long *)(&(a)))
@@ -61,6 +59,45 @@ void call_rcu(struct rcu_head *head, rcu_callback_t func);
 void call_rcu_bh(struct rcu_head *head, rcu_callback_t func);
 void call_rcu_sched(struct rcu_head *head, rcu_callback_t func);
 void synchronize_sched(void);
+
+/*
+ * Structure allowing asynchronous waiting on RCU.
+ */
+struct rcu_synchronize {
+	struct rcu_head head;
+	struct completion completion;
+};
+void wakeme_after_rcu(struct rcu_head *head);
+
+void __wait_rcu_gp(bool checktiny, int n, call_rcu_func_t *crcu_array,
+		   struct rcu_synchronize *rs_array);
+
+#define _wait_rcu_gp(checktiny, ...) \
+do {									\
+	call_rcu_func_t __crcu_array[] = { __VA_ARGS__ };		\
+	struct rcu_synchronize __rs_array[ARRAY_SIZE(__crcu_array)];	\
+	__wait_rcu_gp(checktiny, ARRAY_SIZE(__crcu_array),		\
+			__crcu_array, __rs_array);			\
+} while (0)
+
+#define wait_rcu_gp(...) _wait_rcu_gp(false, __VA_ARGS__)
+
+/**
+ * synchronize_rcu_mult - Wait concurrently for multiple grace periods
+ * @...: List of call_rcu() functions for the flavors to wait on.
+ *
+ * This macro waits concurrently for multiple flavors of RCU grace periods.
+ * For example, synchronize_rcu_mult(call_rcu, call_rcu_bh) would wait
+ * on concurrent RCU and RCU-bh grace periods.  Waiting on a give SRCU
+ * domain requires you to write a wrapper function for that SRCU domain's
+ * call_srcu() function, supplying the corresponding srcu_struct.
+ *
+ * If Tiny RCU, tell _wait_rcu_gp() not to bother waiting for RCU
+ * or RCU-bh, given that anywhere synchronize_rcu_mult() can be called
+ * is automatically a grace period.
+ */
+#define synchronize_rcu_mult(...) \
+	_wait_rcu_gp(IS_ENABLED(CONFIG_TINY_RCU), __VA_ARGS__)
 
 /**
  * call_rcu_tasks() - Queue an RCU for invocation task-based grace period
@@ -86,6 +123,7 @@ void rcu_barrier_tasks(void);
 
 void __rcu_read_lock(void);
 void __rcu_read_unlock(void);
+void rcu_read_unlock_special(struct task_struct *t);
 void synchronize_rcu(void);
 
 /*
@@ -127,6 +165,7 @@ void rcu_sched_qs(void);
 void rcu_bh_qs(void);
 void rcu_check_callbacks(int user);
 void rcu_report_dead(unsigned int cpu);
+void rcu_cpu_starting(unsigned int cpu);
 void rcutree_migrate_callbacks(int cpu);
 
 #ifdef CONFIG_RCU_STALL_COMMON
@@ -178,11 +217,11 @@ static inline void rcu_init_nohz(void) { }
 	} while (0)
 
 /*
- * Note a quasi-voluntary context switch for RCU-tasks's benefit.
- * This is a macro rather than an inline function to avoid #include hell.
+ * Note a voluntary context switch for RCU-tasks benefit.  This is a
+ * macro rather than an inline function to avoid #include hell.
  */
 #ifdef CONFIG_TASKS_RCU
-#define rcu_tasks_qs(t) \
+#define rcu_note_voluntary_context_switch_lite(t) \
 	do { \
 		if (READ_ONCE((t)->rcu_tasks_holdout)) \
 			WRITE_ONCE((t)->rcu_tasks_holdout, false); \
@@ -190,14 +229,14 @@ static inline void rcu_init_nohz(void) { }
 #define rcu_note_voluntary_context_switch(t) \
 	do { \
 		rcu_all_qs(); \
-		rcu_tasks_qs(t); \
+		rcu_note_voluntary_context_switch_lite(t); \
 	} while (0)
 void call_rcu_tasks(struct rcu_head *head, rcu_callback_t func);
 void synchronize_rcu_tasks(void);
 void exit_tasks_rcu_start(void);
 void exit_tasks_rcu_finish(void);
 #else /* #ifdef CONFIG_TASKS_RCU */
-#define rcu_tasks_qs(t)	do { } while (0)
+#define rcu_note_voluntary_context_switch_lite(t)	do { } while (0)
 #define rcu_note_voluntary_context_switch(t)		rcu_all_qs()
 #define call_rcu_tasks call_rcu_sched
 #define synchronize_rcu_tasks synchronize_sched
@@ -206,16 +245,16 @@ static inline void exit_tasks_rcu_finish(void) { }
 #endif /* #else #ifdef CONFIG_TASKS_RCU */
 
 /**
- * cond_resched_tasks_rcu_qs - Report potential quiescent states to RCU
+ * cond_resched_rcu_qs - Report potential quiescent states to RCU
  *
  * This macro resembles cond_resched(), except that it is defined to
  * report potential quiescent states to RCU-tasks even if the cond_resched()
  * machinery were to be shut off, as some advocate for PREEMPT kernels.
  */
-#define cond_resched_tasks_rcu_qs() \
+#define cond_resched_rcu_qs() \
 do { \
-	rcu_tasks_qs(current); \
-	cond_resched(); \
+	if (!cond_resched()) \
+		rcu_note_voluntary_context_switch(current); \
 } while (0)
 
 /*

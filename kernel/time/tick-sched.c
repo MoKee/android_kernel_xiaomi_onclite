@@ -80,21 +80,21 @@ static void tick_do_update_jiffies64(ktime_t now)
 	 * Do a quick check without holding jiffies_lock:
 	 */
 	delta = ktime_sub(now, last_jiffies_update);
-	if (delta < tick_period)
+	if (delta.tv64 < tick_period.tv64)
 		return;
 
 	/* Reevaluate with jiffies_lock held */
 	write_seqlock(&jiffies_lock);
 
 	delta = ktime_sub(now, last_jiffies_update);
-	if (delta >= tick_period) {
+	if (delta.tv64 >= tick_period.tv64) {
 
 		delta = ktime_sub(delta, tick_period);
 		last_jiffies_update = ktime_add(last_jiffies_update,
 						tick_period);
 
 		/* Slow path for long timeouts */
-		if (unlikely(delta >= tick_period)) {
+		if (unlikely(delta.tv64 >= tick_period.tv64)) {
 			s64 incr = ktime_to_ns(tick_period);
 
 			ticks = ktime_divns(delta, incr);
@@ -123,7 +123,7 @@ static ktime_t tick_init_jiffy_update(void)
 
 	write_seqlock(&jiffies_lock);
 	/* Did we start the jiffies update yet ? */
-	if (last_jiffies_update == 0)
+	if (last_jiffies_update.tv64 == 0)
 		last_jiffies_update = tick_next_period;
 	period = last_jiffies_update;
 	write_sequnlock(&jiffies_lock);
@@ -580,13 +580,14 @@ static void tick_nohz_stop_idle(struct tick_sched *ts, ktime_t now)
 	sched_clock_idle_wakeup_event(0);
 }
 
-static void tick_nohz_start_idle(struct tick_sched *ts)
+static ktime_t tick_nohz_start_idle(struct tick_sched *ts)
 {
 	ktime_t now = ktime_get();
 
 	ts->idle_entrytime = now;
 	ts->idle_active = 1;
 	sched_clock_idle_sleep_event();
+	return now;
 }
 
 /**
@@ -700,7 +701,7 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 	/* Read jiffies and the time when jiffies were updated last */
 	do {
 		seq = read_seqbegin(&jiffies_lock);
-		basemono = last_jiffies_update;
+		basemono = last_jiffies_update.tv64;
 		basejiff = jiffies;
 	} while (read_seqretry(&jiffies_lock, seq));
 	ts->last_jiffies = basejiff;
@@ -738,7 +739,7 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 	 */
 	delta = next_tick - basemono;
 	if (delta <= (u64)TICK_NSEC) {
-		tick = 0;
+		tick.tv64 = 0;
 
 		/*
 		 * Tell the timer code that the base is not idle, i.e. undo
@@ -805,10 +806,10 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 		expires = KTIME_MAX;
 
 	expires = min_t(u64, expires, next_tick);
-	tick = expires;
+	tick.tv64 = expires;
 
 	/* Skip reprogram of event if its not changed */
-	if (ts->tick_stopped && (expires == dev->next_event))
+	if (ts->tick_stopped && (expires == dev->next_event.tv64))
 		goto out;
 
 	/*
@@ -821,6 +822,7 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 	if (!ts->tick_stopped) {
 		nohz_balance_enter_idle(cpu);
 		calc_load_enter_idle();
+		cpu_load_update_nohz_start();
 		quiet_vmstat();
 
 		ts->last_tick = hrtimer_get_expires(&ts->sched_timer);
@@ -852,6 +854,7 @@ static void tick_nohz_restart_sched_tick(struct tick_sched *ts, ktime_t now)
 {
 	/* Update jiffies first */
 	tick_do_update_jiffies64(now);
+	cpu_load_update_nohz_stop();
 
 	/*
 	 * Clear the timer idle flag, so we avoid IPIs on remote queueing and
@@ -904,7 +907,7 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 	}
 
 	if (unlikely(ts->nohz_mode == NOHZ_MODE_INACTIVE)) {
-		ts->sleep_length = NSEC_PER_SEC / HZ;
+		ts->sleep_length = (ktime_t) { .tv64 = NSEC_PER_SEC/HZ };
 		return false;
 	}
 
@@ -941,6 +944,34 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 	return true;
 }
 
+static void __tick_nohz_idle_enter(struct tick_sched *ts)
+{
+	ktime_t now, expires;
+	int cpu = smp_processor_id();
+
+#ifdef CONFIG_SMP
+	if (check_pending_deferrable_timers(cpu))
+		raise_softirq_irqoff(TIMER_SOFTIRQ);
+#endif
+
+	now = tick_nohz_start_idle(ts);
+
+	if (can_stop_idle_tick(cpu, ts)) {
+		int was_stopped = ts->tick_stopped;
+
+		ts->idle_calls++;
+
+		expires = tick_nohz_stop_sched_tick(ts, now, cpu);
+		if (expires.tv64 > 0LL) {
+			ts->idle_sleeps++;
+			ts->idle_expires = expires;
+		}
+
+		if (!was_stopped && ts->tick_stopped)
+			ts->idle_jiffies = ts->last_jiffies;
+	}
+}
+
 /**
  * tick_nohz_idle_enter - stop the idle tick from the idle task
  *
@@ -955,19 +986,25 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
  */
 void tick_nohz_idle_enter(void)
 {
-    struct tick_sched *ts;
+	struct tick_sched *ts;
 
-    lockdep_assert_irqs_enabled();
+	WARN_ON_ONCE(irqs_disabled());
 
-    local_irq_disable();
+	/*
+	 * Update the idle state in the scheduler domain hierarchy
+	 * when tick_nohz_stop_sched_tick() is called from the idle loop.
+	 * State will be updated to busy during the first busy tick after
+	 * exiting idle.
+	 */
+	set_cpu_sd_state_idle();
 
-    ts = this_cpu_ptr(&tick_cpu_sched);
+	local_irq_disable();
 
-    ts->inidle = 1;
-    tick_nohz_start_idle(ts);
+	ts = this_cpu_ptr(&tick_cpu_sched);
+	ts->inidle = 1;
+	__tick_nohz_idle_enter(ts);
 
-    local_irq_enable();
-
+	local_irq_enable();
 }
 
 /**
@@ -983,7 +1020,7 @@ void tick_nohz_irq_exit(void)
 	struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
 
 	if (ts->inidle)
-		tick_nohz_start_idle(ts);
+		__tick_nohz_idle_enter(ts);
 	else
 		tick_nohz_full_update_tick(ts);
 }
@@ -1087,7 +1124,7 @@ static void tick_nohz_handler(struct clock_event_device *dev)
 	struct pt_regs *regs = get_irq_regs();
 	ktime_t now = ktime_get();
 
-	dev->next_event = KTIME_MAX;
+	dev->next_event.tv64 = KTIME_MAX;
 
 	tick_sched_do_timer(now);
 	tick_sched_handle(ts, regs);

@@ -3550,8 +3550,7 @@ found_it:
 	if (hlock->instance == lock)
 		lock_release_holdtime(hlock);
 
-	if (lockdep_logging_off())
-		WARN(hlock->pin_count, "releasing a pinned lock\n");
+	WARN(hlock->pin_count, "releasing a pinned lock\n");
 
 	if (hlock->references) {
 		hlock->references--;
@@ -3637,9 +3636,7 @@ static struct pin_cookie __lock_pin_lock(struct lockdep_map *lock)
 		}
 	}
 
-	if (lockdep_logging_off())
-		WARN(1, "pinning an unheld lock\n");
-
+	WARN(1, "pinning an unheld lock\n");
 	return cookie;
 }
 
@@ -3660,8 +3657,7 @@ static void __lock_repin_lock(struct lockdep_map *lock, struct pin_cookie cookie
 		}
 	}
 
-	if (lockdep_logging_off())
-		WARN(1, "pinning an unheld lock\n");
+	WARN(1, "pinning an unheld lock\n");
 }
 
 static void __lock_unpin_lock(struct lockdep_map *lock, struct pin_cookie cookie)
@@ -3676,26 +3672,19 @@ static void __lock_unpin_lock(struct lockdep_map *lock, struct pin_cookie cookie
 		struct held_lock *hlock = curr->held_locks + i;
 
 		if (match_held_lock(hlock, lock)) {
-			if (!hlock->pin_count) {
-				if (lockdep_logging_off())
-					WARN(1, "unpinning an unpinned lock\n");
+			if (WARN(!hlock->pin_count, "unpinning an unpinned lock\n"))
 				return;
-			}
 
 			hlock->pin_count -= cookie.val;
 
-			if ((int)hlock->pin_count < 0) {
-				if (lockdep_logging_off())
-					WARN(1, "pin count corrupted\n");
+			if (WARN((int)hlock->pin_count < 0, "pin count corrupted\n"))
 				hlock->pin_count = 0;
-			}
 
 			return;
 		}
 	}
 
-	if (lockdep_logging_off())
-		WARN(1, "unpinning an unheld lock\n");
+	WARN(1, "unpinning an unheld lock\n");
 }
 
 /*

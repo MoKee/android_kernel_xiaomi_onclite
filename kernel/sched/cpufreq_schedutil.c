@@ -17,6 +17,7 @@
 #include <trace/events/power.h>
 #include <linux/sched/sysctl.h>
 #include "sched.h"
+#include "tune.h"
 #include <linux/cpuset.h>
 #include <linux/sched/cpufreq.h>
 
@@ -74,6 +75,7 @@ struct sugov_cpu {
 };
 
 static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
+static unsigned int stale_ns;
 static DEFINE_PER_CPU(struct sugov_tunables *, cached_tunables);
 
 /************************ Governor internals ***********************/
@@ -94,10 +96,12 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	 * by the hardware, as calculating the frequency is pointless if
 	 * we cannot in fact act on it.
 	 *
-	 * This is needed on the slow switching platforms too to prevent CPUs
-	 * going offline from leaving stale IRQ work items behind.
+	 * For the slow switching platforms, the kthread is always scheduled on
+	 * the right set of CPUs and any CPU can find the next frequency and
+	 * schedule the kthread.
 	 */
-	if (!cpufreq_this_cpu_can_update(sg_policy->policy))
+	if (sg_policy->policy->fast_switch_enabled &&
+	    !cpufreq_can_do_remote_dvfs(sg_policy->policy))
 		return false;
 
 	if (unlikely(sg_policy->limits_changed)) {
@@ -113,6 +117,24 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 
 	delta_ns = time - sg_policy->last_freq_update_time;
 	return delta_ns >= sg_policy->freq_update_delay_ns;
+}
+
+static bool sugov_up_down_rate_limit(struct sugov_policy *sg_policy, u64 time,
+				     unsigned int next_freq)
+{
+	s64 delta_ns;
+
+	delta_ns = time - sg_policy->last_freq_update_time;
+
+	if (next_freq > sg_policy->next_freq &&
+	    delta_ns < sg_policy->up_rate_delay_ns)
+		return true;
+
+	if (next_freq < sg_policy->next_freq &&
+	    delta_ns < sg_policy->down_rate_delay_ns)
+		return true;
+
+	return false;
 }
 
 static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
@@ -131,7 +153,6 @@ static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 	          unsigned int next_freq)
 {
 	struct cpufreq_policy *policy = sg_policy->policy;
-	int cpu;
 
 	if (!sugov_update_next_freq(sg_policy, time, next_freq))
 		return;
@@ -141,11 +162,7 @@ static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 		return;
 
 	policy->cur = next_freq;
-
-	if (trace_cpu_frequency_enabled()) {
-		for_each_cpu(cpu, policy->cpus)
-			trace_cpu_frequency(next_freq, cpu);
-	}
+	trace_cpu_frequency(next_freq, smp_processor_id());
 }
 
 static void sugov_deferred_update(struct sugov_policy *sg_policy, u64 time,
@@ -905,6 +922,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
+	stale_ns = sched_ravg_window + (sched_ravg_window >> 3);
 
 	sugov_tunables_restore(policy);
 

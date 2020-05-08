@@ -252,6 +252,9 @@ static int cpufreq_cooling_pm_notify(struct notifier_block *nb,
 				if (cpu_online(cpu) &&
 					!cpumask_test_and_set_cpu(cpu,
 					&cpus_isolated_by_thermal)) {
+					if (sched_isolate_cpu(cpu))
+						cpumask_clear_cpu(cpu,
+						&cpus_isolated_by_thermal);
 				}
 				continue;
 			}
@@ -283,6 +286,7 @@ static int cpufreq_hp_offline(unsigned int offline_cpu)
 		if ((cpufreq_dev->cpufreq_state == cpufreq_dev->max_level) &&
 			(cpumask_test_and_clear_cpu(offline_cpu,
 			&cpus_isolated_by_thermal)))
+			sched_unisolate_cpu_unlocked(offline_cpu);
 		mutex_unlock(&core_isolate_lock);
 		break;
 	}
@@ -416,6 +420,8 @@ static int build_dyn_power_table(struct cpufreq_cooling_device *cpufreq_device,
 	if (!power_table)
 		return -ENOMEM;
 
+	rcu_read_lock();
+
 	for (freq = 0, i = 0;
 	     opp = dev_pm_opp_find_freq_ceil(dev, &freq), !IS_ERR(opp);
 	     freq++, i++) {
@@ -423,13 +429,13 @@ static int build_dyn_power_table(struct cpufreq_cooling_device *cpufreq_device,
 		u64 power;
 
 		if (i >= num_opps) {
+			rcu_read_unlock();
 			ret = -EAGAIN;
 			goto free_power_table;
 		}
 
 		freq_mhz = freq / 1000000;
 		voltage_mv = dev_pm_opp_get_voltage(opp) / 1000;
-		dev_pm_opp_put(opp);
 
 		/*
 		 * Do the multiplication with MHz and millivolt so as
@@ -444,6 +450,8 @@ static int build_dyn_power_table(struct cpufreq_cooling_device *cpufreq_device,
 		/* power is stored in mW */
 		power_table[i].power = power;
 	}
+
+	rcu_read_unlock();
 
 	if (i != num_opps) {
 		ret = PTR_ERR(opp);
@@ -548,10 +556,13 @@ static int get_static_power(struct cpufreq_cooling_device *cpufreq_device,
 		return 0;
 	}
 
+	rcu_read_lock();
+
 	opp = dev_pm_opp_find_freq_exact(cpufreq_device->cpu_dev, freq_hz,
 					 true);
 	voltage = dev_pm_opp_get_voltage(opp);
-	dev_pm_opp_put(opp);
+
+	rcu_read_unlock();
 
 	if (voltage == 0) {
 		dev_warn_ratelimited(cpufreq_device->cpu_dev,
@@ -734,6 +745,7 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 		if (cpu_online(cpu) &&
 			(!cpumask_test_and_set_cpu(cpu,
 			&cpus_isolated_by_thermal))) {
+			if (sched_isolate_cpu(cpu))
 				cpumask_clear_cpu(cpu,
 					&cpus_isolated_by_thermal);
 		}
@@ -748,6 +760,7 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 			goto update_frequency;
 		} else if (cpumask_test_and_clear_cpu(cpu,
 			&cpus_isolated_by_thermal)) {
+			sched_unisolate_cpu(cpu);
 		}
 	}
 update_frequency:

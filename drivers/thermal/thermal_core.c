@@ -605,7 +605,7 @@ static void update_temperature(struct thermal_zone_device *tz)
 	ret = thermal_zone_get_temp(tz, &temp);
 	if (ret) {
 		if (ret != -EAGAIN)
-			dev_dbg(&tz->device,
+			dev_warn(&tz->device,
 				 "failed to read out thermal zone (%d)\n",
 				 ret);
 		return;
@@ -647,13 +647,6 @@ void thermal_zone_device_update_temp(struct thermal_zone_device *tz,
 	thermal_zone_set_trips(tz);
 
 	tz->notify_event = event;
-	/*
-	 * To prevent cooling_device throttling
-	 * when tz->temperature keep initialized status.
-	 */
-	if (tz->temperature == THERMAL_TEMP_INVALID ||
-		tz->temperature == THERMAL_TEMP_INVALID_LOW)
-		return;
 
 	for (count = 0; count < tz->trips; count++)
 		handle_thermal_trip(tz, count);

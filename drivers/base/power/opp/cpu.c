@@ -42,6 +42,11 @@
  *
  * WARNING: It is  important for the callers to ensure refreshing their copy of
  * the table if any of the mentioned functions have been invoked in the interim.
+ *
+ * Locking: The internal opp_table and opp structures are RCU protected.
+ * Since we just use the regular accessor functions to access the internal data
+ * structures, we use RCU read lock inside this function. As a result, users of
+ * this function DONOT need to use explicit locks for invoking.
  */
 int dev_pm_opp_init_cpufreq_table(struct device *dev,
 				  struct cpufreq_frequency_table **table)
@@ -51,13 +56,19 @@ int dev_pm_opp_init_cpufreq_table(struct device *dev,
 	int i, max_opps, ret = 0;
 	unsigned long rate;
 
+	rcu_read_lock();
+
 	max_opps = dev_pm_opp_get_opp_count(dev);
-	if (max_opps <= 0)
-		return max_opps ? max_opps : -ENODATA;
+	if (max_opps <= 0) {
+		ret = max_opps ? max_opps : -ENODATA;
+		goto out;
+	}
 
 	freq_table = kcalloc((max_opps + 1), sizeof(*freq_table), GFP_ATOMIC);
-	if (!freq_table)
-		return -ENOMEM;
+	if (!freq_table) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	for (i = 0, rate = 0; i < max_opps; i++, rate++) {
 		/* find next rate */
@@ -72,8 +83,6 @@ int dev_pm_opp_init_cpufreq_table(struct device *dev,
 		/* Is Boost/turbo opp ? */
 		if (dev_pm_opp_is_turbo(opp))
 			freq_table[i].flags = CPUFREQ_BOOST_FREQ;
-
-		dev_pm_opp_put(opp);
 	}
 
 	freq_table[i].driver_data = i;
@@ -82,6 +91,7 @@ int dev_pm_opp_init_cpufreq_table(struct device *dev,
 	*table = &freq_table[0];
 
 out:
+	rcu_read_unlock();
 	if (ret)
 		kfree(freq_table);
 
@@ -137,6 +147,12 @@ void _dev_pm_opp_cpumask_remove_table(const struct cpumask *cpumask, bool of)
  * This removes the OPP tables for CPUs present in the @cpumask.
  * This should be used to remove all the OPPs entries associated with
  * the cpus in @cpumask.
+ *
+ * Locking: The internal opp_table and opp structures are RCU protected.
+ * Hence this function internally uses RCU updater strategy with mutex locks
+ * to keep the integrity of the internal data structures. Callers should ensure
+ * that this function is *NOT* called under RCU protection or in contexts where
+ * mutex cannot be locked.
  */
 void dev_pm_opp_cpumask_remove_table(const struct cpumask *cpumask)
 {
@@ -153,6 +169,12 @@ EXPORT_SYMBOL_GPL(dev_pm_opp_cpumask_remove_table);
  * @cpumask.
  *
  * Returns -ENODEV if OPP table isn't already present.
+ *
+ * Locking: The internal opp_table and opp structures are RCU protected.
+ * Hence this function internally uses RCU updater strategy with mutex locks
+ * to keep the integrity of the internal data structures. Callers should ensure
+ * that this function is *NOT* called under RCU protection or in contexts where
+ * mutex cannot be locked.
  */
 int dev_pm_opp_set_sharing_cpus(struct device *cpu_dev,
 				const struct cpumask *cpumask)
@@ -162,9 +184,13 @@ int dev_pm_opp_set_sharing_cpus(struct device *cpu_dev,
 	struct device *dev;
 	int cpu, ret = 0;
 
+	mutex_lock(&opp_table_lock);
+
 	opp_table = _find_opp_table(cpu_dev);
-	if (IS_ERR(opp_table))
-		return PTR_ERR(opp_table);
+	if (IS_ERR(opp_table)) {
+		ret = PTR_ERR(opp_table);
+		goto unlock;
+	}
 
 	for_each_cpu(cpu, cpumask) {
 		if (cpu == cpu_dev->id)
@@ -187,8 +213,8 @@ int dev_pm_opp_set_sharing_cpus(struct device *cpu_dev,
 		/* Mark opp-table as multiple CPUs are sharing it now */
 		opp_table->shared_opp = OPP_TABLE_ACCESS_SHARED;
 	}
-
-	dev_pm_opp_put_opp_table(opp_table);
+unlock:
+	mutex_unlock(&opp_table_lock);
 
 	return ret;
 }
@@ -203,6 +229,12 @@ EXPORT_SYMBOL_GPL(dev_pm_opp_set_sharing_cpus);
  *
  * Returns -ENODEV if OPP table isn't already present and -EINVAL if the OPP
  * table's status is access-unknown.
+ *
+ * Locking: The internal opp_table and opp structures are RCU protected.
+ * Hence this function internally uses RCU updater strategy with mutex locks
+ * to keep the integrity of the internal data structures. Callers should ensure
+ * that this function is *NOT* called under RCU protection or in contexts where
+ * mutex cannot be locked.
  */
 int dev_pm_opp_get_sharing_cpus(struct device *cpu_dev, struct cpumask *cpumask)
 {
@@ -210,13 +242,17 @@ int dev_pm_opp_get_sharing_cpus(struct device *cpu_dev, struct cpumask *cpumask)
 	struct opp_table *opp_table;
 	int ret = 0;
 
+	mutex_lock(&opp_table_lock);
+
 	opp_table = _find_opp_table(cpu_dev);
-	if (IS_ERR(opp_table))
-		return PTR_ERR(opp_table);
+	if (IS_ERR(opp_table)) {
+		ret = PTR_ERR(opp_table);
+		goto unlock;
+	}
 
 	if (opp_table->shared_opp == OPP_TABLE_ACCESS_UNKNOWN) {
 		ret = -EINVAL;
-		goto put_opp_table;
+		goto unlock;
 	}
 
 	cpumask_clear(cpumask);
@@ -228,8 +264,8 @@ int dev_pm_opp_get_sharing_cpus(struct device *cpu_dev, struct cpumask *cpumask)
 		cpumask_set_cpu(cpu_dev->id, cpumask);
 	}
 
-put_opp_table:
-	dev_pm_opp_put_opp_table(opp_table);
+unlock:
+	mutex_unlock(&opp_table_lock);
 
 	return ret;
 }

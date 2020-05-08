@@ -551,7 +551,7 @@ static int __init boot_cpus(char *str)
 early_param("boot_cpus", boot_cpus);
 
 /* Setup number of possible processor ids */
-unsigned int nr_cpu_ids __read_mostly = NR_CPUS;
+int nr_cpu_ids __read_mostly = NR_CPUS;
 EXPORT_SYMBOL(nr_cpu_ids);
 
 /* An arch may set nr_cpu_ids earlier if needed, so this would be redundant */
@@ -754,7 +754,8 @@ void wake_up_all_idle_cpus(void)
 	for_each_online_cpu(cpu) {
 		if (cpu == smp_processor_id())
 			continue;
-		if (suspend_freeze_state == FREEZE_STATE_ENTER)
+		if (suspend_freeze_state == FREEZE_STATE_ENTER ||
+		    !cpu_isolated(cpu))
 			wake_up_if_idle(cpu);
 	}
 	preempt_enable();
