@@ -44,7 +44,7 @@ SCHED_FEAT(WAKEUP_PREEMPTION, true)
 
 SCHED_FEAT(HRTICK, false)
 SCHED_FEAT(DOUBLE_TICK, false)
-SCHED_FEAT(LB_BIAS, false)
+SCHED_FEAT(LB_BIAS, true)
 
 /*
  * Decrement CPU capacity based on time not spent running tasks
@@ -128,7 +128,7 @@ SCHED_FEAT(EAS_SIMPLIFIED_EM, true)
 /*
  * Fast pre-selection of CPU candidates for EAS.
  */
-SCHED_FEAT(FIND_BEST_TARGET, false)
+SCHED_FEAT(FIND_BEST_TARGET, true)
 
 /*
  * Energy aware scheduling algorithm choices:
