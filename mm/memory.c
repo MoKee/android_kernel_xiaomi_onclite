@@ -401,7 +401,7 @@ static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
 	pgtable_t token = pmd_pgtable(*pmd);
 	pmd_clear(pmd);
 	pte_free_tlb(tlb, token, addr);
-	mm_dec_nr_ptes(tlb->mm);
+	atomic_long_dec(&tlb->mm->nr_ptes);
 }
 
 static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
@@ -469,7 +469,6 @@ static inline void free_pud_range(struct mmu_gather *tlb, pgd_t *pgd,
 	pud = pud_offset(pgd, start);
 	pgd_clear(pgd);
 	pud_free_tlb(tlb, pud, start);
-	mm_dec_nr_puds(tlb->mm);
 }
 
 /*
@@ -596,7 +595,7 @@ int __pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address)
 
 	ptl = pmd_lock(mm, pmd);
 	if (likely(pmd_none(*pmd))) {	/* Has another populated it ? */
-		mm_inc_nr_ptes(mm);
+		atomic_long_inc(&mm->nr_ptes);
 		pmd_populate(mm, pmd, new);
 		new = NULL;
 	}
@@ -1127,7 +1126,6 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 				struct zap_details *details)
 {
 	struct mm_struct *mm = tlb->mm;
-	int progress = 0;
 	int force_flush = 0;
 	int rss[NR_MM_COUNTERS];
 	spinlock_t *ptl;
@@ -1143,15 +1141,7 @@ again:
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
 	do {
-		pte_t ptent;
-
-		if (progress++ >= 32) {
-			progress = 0;
-			if (need_resched())
-				break;
-		}
-
-		ptent = *pte;
+		pte_t ptent = *pte;
 		if (pte_none(ptent)) {
 			continue;
 		}
@@ -1237,11 +1227,8 @@ again:
 			__tlb_remove_pte_page(tlb, pending_page);
 			pending_page = NULL;
 		}
-	}
-
-	if (addr != end) {
-		progress = 0;
-		goto again;
+		if (addr != end)
+			goto again;
 	}
 
 	return addr;
@@ -2238,10 +2225,6 @@ static int do_page_mkwrite(struct vm_area_struct *vma, struct page *page,
 	vmf.page = page;
 	vmf.cow_page = NULL;
 
-	if (vma->vm_file &&
-	    IS_SWAPFILE(vma->vm_file->f_mapping->host))
-		return VM_FAULT_SIGBUS;
-
 	ret = vma->vm_ops->page_mkwrite(vma, &vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE)))
 		return ret;
@@ -2900,7 +2883,7 @@ int do_swap_page(struct fault_env *fe, pte_t orig_pte)
 unlock:
 	pte_unmap_unlock(fe->pte, fe->ptl);
 out:
-	return ret | VM_FAULT_SWAP;
+	return ret;
 out_nomap:
 	pte_unmap_unlock(fe->pte, fe->ptl);
 out_cancel_cgroup:
@@ -2913,7 +2896,7 @@ out_release:
 		unlock_page(swapcache);
 		put_page(swapcache);
 	}
-	return ret | VM_FAULT_SWAP;
+	return ret;
 }
 
 /*
@@ -3124,7 +3107,7 @@ static int pte_alloc_one_map(struct fault_env *fe)
 			goto map_pte;
 		}
 
-		mm_inc_nr_ptes(vma->vm_mm);
+		atomic_long_inc(&vma->vm_mm->nr_ptes);
 		pmd_populate(vma->vm_mm, fe->pmd, fe->prealloc_pte);
 		spin_unlock(fe->ptl);
 		fe->prealloc_pte = 0;
@@ -4224,13 +4207,10 @@ int __pud_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 	smp_wmb(); /* See comment in __pte_alloc */
 
 	spin_lock(&mm->page_table_lock);
-	if (pgd_present(*pgd)) {
-		/* Another has populated it */
+	if (pgd_present(*pgd))		/* Another has populated it */
 		pud_free(mm, new);
-	} else {
-		mm_inc_nr_puds(mm);
+	else
 		pgd_populate(mm, pgd, new);
-	}
 	spin_unlock(&mm->page_table_lock);
 	return 0;
 }

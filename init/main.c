@@ -83,7 +83,6 @@
 #include <linux/io.h>
 #include <linux/kaiser.h>
 #include <linux/cache.h>
-#include <linux/jump_label.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -130,20 +129,6 @@ static char *initcall_command_line;
 
 static char *execute_command;
 static char *ramdisk_execute_command;
-
-static unsigned int android_version = CONFIG_DEFAULT_ANDROID_VERSION;
-
-static int __init set_android_version(char *val)
-{
-	get_option(&val, &android_version);
-	return 0;
-}
-__setup("androidboot.version=", set_android_version);
-
-unsigned int get_android_version(void)
-{
-	return android_version;
-}
 
 /*
  * Used to generate warnings if static_key manipulation functions are used
@@ -496,8 +481,6 @@ static void __init mm_init(void)
 
 int fpsensor=1;
 
-void __init init_sync_kmem_pool(void);
-void __init init_dma_buf_kmem_pool(void);
 asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
@@ -673,15 +656,12 @@ asmlinkage __visible void __init start_kernel(void)
 	vfs_caches_init();
 	pagecache_init();
 	signals_init();
-	seq_file_init();
 	proc_root_init();
 	nsfs_init();
 	cpuset_init();
 	cgroup_init();
 	taskstats_init_early();
 	delayacct_init();
-	init_sync_kmem_pool();
-	init_dma_buf_kmem_pool();
 
 	check_bugs();
 
@@ -887,11 +867,8 @@ static void __init do_initcalls(void)
 {
 	int level;
 
-	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
+	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++)
 		do_initcall_level(level);
-		/* need to finish all async calls before going into next level */
-		async_synchronize_full();
-	}
 }
 
 /*

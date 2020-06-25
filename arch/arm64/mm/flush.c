@@ -25,7 +25,14 @@
 #include <asm/cachetype.h>
 #include <asm/tlbflush.h>
 
-void sync_icache_aliases(void *kaddr, unsigned long len)
+void flush_cache_range(struct vm_area_struct *vma, unsigned long start,
+		       unsigned long end)
+{
+	if (vma->vm_flags & VM_EXEC)
+		__flush_icache_all();
+}
+
+static void sync_icache_aliases(void *kaddr, unsigned long len)
 {
 	unsigned long addr = (unsigned long)kaddr;
 
@@ -86,19 +93,3 @@ EXPORT_SYMBOL(flush_dcache_page);
  */
 EXPORT_SYMBOL(flush_cache_all);
 EXPORT_SYMBOL(flush_icache_range);
-
-#ifdef CONFIG_ARCH_HAS_PMEM_API
-static inline void arch_wb_cache_pmem(void *addr, size_t size)
-{
-	/* Ensure order against any prior non-cacheable writes */
-	dmb(osh);
-	__clean_dcache_area_pop(addr, size);
-}
-EXPORT_SYMBOL_GPL(arch_wb_cache_pmem);
-
-static inline void arch_invalidate_pmem(void *addr, size_t size)
-{
-	__inval_dcache_area(addr, size);
-}
-EXPORT_SYMBOL_GPL(arch_invalidate_pmem);
-#endif

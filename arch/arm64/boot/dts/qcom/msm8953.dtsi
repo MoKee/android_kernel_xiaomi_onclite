@@ -53,7 +53,7 @@
 					dev = "/dev/block/platform/soc/7824900.sdhci/by-name/vendor";
 					type = "ext4";
 					mnt_flags = "ro,barrier=1,discard";
-					fsmgr_flags = "wait";
+					fsmgr_flags = "wait,avb";
 					status = "ok";
 				};
 
@@ -155,7 +155,16 @@
 			size = <0 0x800000>;
 		};
 
-
+/* xuke @ 20180614	Do not need to define size here, but comes from cmdline send by LK.
+		pstore_reserve_mem: ramoops@0 {
+			compatible = "ramoops";
+			reg = <0x0 0x91400000 0x0 0x400000>;
+			label = "pstore_reserve_mem";
+			record-size	= <0x00020000>;
+			console-size	= <0x00020000>;
+			ftrace-size	= <0x00020000>;
+		};
+*/
 		gpu_mem: gpu_region@0 {
 			compatible = "shared-dma-pool";
 			reusable;

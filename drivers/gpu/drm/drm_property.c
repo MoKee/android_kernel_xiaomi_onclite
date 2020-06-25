@@ -533,7 +533,7 @@ static void drm_property_free_blob(struct kref *kref)
 
 	drm_mode_object_unregister(blob->dev, &blob->base);
 
-	kvfree(blob);
+	vfree(blob);
 }
 
 /**
@@ -557,11 +557,10 @@ drm_property_create_blob(struct drm_device *dev, size_t length,
 	struct drm_property_blob *blob;
 	int ret;
 
-	if (!length || length > MAX_BLOB_PROP_SIZE -
-				sizeof(struct drm_property_blob))
+	if (!length || length > INT_MAX - sizeof(struct drm_property_blob))
 		return ERR_PTR(-EINVAL);
 
-	blob = drm_kvzalloc(sizeof(struct drm_property_blob)+length, GFP_KERNEL);
+	blob = vzalloc(sizeof(struct drm_property_blob)+length);
 	if (!blob)
 		return ERR_PTR(-ENOMEM);
 
@@ -577,7 +576,7 @@ drm_property_create_blob(struct drm_device *dev, size_t length,
 	ret = drm_mode_object_get_reg(dev, &blob->base, DRM_MODE_OBJECT_BLOB,
 				      true, drm_property_free_blob);
 	if (ret) {
-		kvfree(blob);
+		vfree(blob);
 		return ERR_PTR(-EINVAL);
 	}
 

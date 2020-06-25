@@ -25,7 +25,6 @@
 #include <linux/timer.h>
 #include <linux/context_tracking.h>
 #include <linux/rq_stats.h>
-#include <linux/mm.h>
 
 #include <asm/irq_regs.h>
 
@@ -823,7 +822,6 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 		nohz_balance_enter_idle(cpu);
 		calc_load_enter_idle();
 		cpu_load_update_nohz_start();
-		quiet_vmstat();
 
 		ts->last_tick = hrtimer_get_expires(&ts->sched_timer);
 		ts->tick_stopped = 1;
@@ -949,12 +947,12 @@ static void __tick_nohz_idle_enter(struct tick_sched *ts)
 	ktime_t now, expires;
 	int cpu = smp_processor_id();
 
+	now = tick_nohz_start_idle(ts);
+
 #ifdef CONFIG_SMP
 	if (check_pending_deferrable_timers(cpu))
 		raise_softirq_irqoff(TIMER_SOFTIRQ);
 #endif
-
-	now = tick_nohz_start_idle(ts);
 
 	if (can_stop_idle_tick(cpu, ts)) {
 		int was_stopped = ts->tick_stopped;
@@ -1035,19 +1033,6 @@ ktime_t tick_nohz_get_sleep_length(void)
 	struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
 
 	return ts->sleep_length;
-}
-
-/**
- * tick_nohz_get_idle_calls_cpu - return the current idle calls counter value
- * for a particular CPU.
- *
- * Called from the schedutil frequency scaling governor in scheduler context.
- */
-unsigned long tick_nohz_get_idle_calls_cpu(int cpu)
-{
-	struct tick_sched *ts = tick_get_tick_sched(cpu);
-
-	return ts->idle_calls;
 }
 
 /**

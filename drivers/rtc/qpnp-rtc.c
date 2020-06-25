@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, 2017-2019,The Linux Foundation. All rights reserved.
  * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -293,15 +293,6 @@ qpnp_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 	rtc_tm_to_time(&alarm->time, &secs);
 
 	/*
-	 * Offset a power off alarm wakeup so the device actually wakes
-	 * before the alarm is due. This should normally be done in user
-	 * space, but the caller in that case is a proprietary app in the
-	 * vendor partition. Oh well...
-	 */
-	if (!strcmp(current->comm, "alarm@1.0-servi"))
-		secs -= 60;
-
-	/*
 	 * Read the current RTC time and verify if the alarm time is in the
 	 * past. If yes, return invalid
 	 */
@@ -385,13 +376,14 @@ qpnp_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 				alarm->time.tm_mon, alarm->time.tm_year);
 
 	rc = qpnp_read_wrapper(rtc_dd, value,
-    				rtc_dd->alarm_base + REG_OFFSET_ALARM_CTRL1, 1);
+		rtc_dd->alarm_base + REG_OFFSET_ALARM_CTRL1, 1);
 	if (rc) {
-	  dev_err(dev, "Read from ALARM CTRL1 failed\n");
-	  return rc;
+		dev_err(dev, "Read from ALARM CTRL1 failed\n");
+		return rc;
 	}
 
-        alarm->enabled = !!(value[0] & BIT_RTC_ALARM_ENABLE);
+	alarm->enabled = !!(value[0] & BIT_RTC_ALARM_ENABLE);
+
 	return 0;
 }
 

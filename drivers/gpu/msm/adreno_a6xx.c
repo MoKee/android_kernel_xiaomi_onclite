@@ -695,10 +695,10 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 
 	/* Program the GMEM VA range for the UCHE path */
 	kgsl_regwrite(device, A6XX_UCHE_GMEM_RANGE_MIN_LO,
-				adreno_dev->uche_gmem_base);
+				ADRENO_UCHE_GMEM_BASE);
 	kgsl_regwrite(device, A6XX_UCHE_GMEM_RANGE_MIN_HI, 0x0);
 	kgsl_regwrite(device, A6XX_UCHE_GMEM_RANGE_MAX_LO,
-				adreno_dev->uche_gmem_base +
+				ADRENO_UCHE_GMEM_BASE +
 				adreno_dev->gmem_size - 1);
 	kgsl_regwrite(device, A6XX_UCHE_GMEM_RANGE_MAX_HI, 0x0);
 
@@ -767,9 +767,9 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 	kgsl_regwrite(device, A6XX_UCHE_MODE_CNTL, (glbl_inv << 29) |
 						(mal << 23) | (bit << 21));
 
-	/* Set hang detection threshold to 0x3FFFFF * 16 cycles */
+	/* Set hang detection threshold to 0x1FFFFF * 16 cycles */
 	kgsl_regwrite(device, A6XX_RBBM_INTERFACE_HANG_INT_CNTL,
-					(1 << 30) | 0x3fffff);
+					  (1 << 30) | 0x1fffff);
 
 	kgsl_regwrite(device, A6XX_UCHE_CLIENT_PF, 1);
 
@@ -1640,7 +1640,7 @@ static int a6xx_gfx_rail_on(struct kgsl_device *device)
 	unsigned int perf_idx;
 	int ret;
 
-	perf_idx = pwr->num_pwrlevels - 1;
+	perf_idx = pwr->num_pwrlevels - pwr->default_pwrlevel - 1;
 	default_opp = &gmu->rpmh_votes.gx_votes[perf_idx];
 
 	kgsl_gmu_regwrite(device, A6XX_GMU_BOOT_SLUMBER_OPTION,
@@ -1669,8 +1669,8 @@ static int a6xx_notify_slumber(struct kgsl_device *device)
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct gmu_device *gmu = &device->gmu;
-	int bus_level = pwr->pwrlevels[pwr->num_pwrlevels - 1].bus_freq;
-	int perf_idx = gmu->num_gpupwrlevels - 1;
+	int bus_level = pwr->pwrlevels[pwr->default_pwrlevel].bus_freq;
+	int perf_idx = gmu->num_gpupwrlevels - pwr->default_pwrlevel - 1;
 	int ret, state;
 
 	/* Disable the power counter so that the GMU is not busy */
@@ -3628,8 +3628,7 @@ static void a6xx_platform_setup(struct adreno_device *adreno_dev)
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 
 	/* Calculate SP local and private mem addresses */
-	addr = ALIGN(adreno_dev->uche_gmem_base + adreno_dev->gmem_size,
-					SZ_64K);
+	addr = ALIGN(ADRENO_UCHE_GMEM_BASE + adreno_dev->gmem_size, SZ_64K);
 	adreno_dev->sp_local_gpuaddr = addr;
 	adreno_dev->sp_pvt_gpuaddr = addr + SZ_64K;
 

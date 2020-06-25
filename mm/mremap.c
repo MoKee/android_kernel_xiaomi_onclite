@@ -155,17 +155,14 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		 * If we are remapping a valid PTE, make sure
 		 * to flush TLB before we drop the PTL for the
 		 * PTE.
-         *
+		 *
 		 * NOTE! Both old and new PTL matter: the old one
-         * for racing with page_mkclean(), the new one to
-         * make sure the physical page stays valid until
-         * the TLB entry for the ald th page_mkclean(), the new one to
-         * +         * make sure the physical page stays valid until
-         * +         * the TLB entry for the old mapping has been
-         * +         * flushed.mapping has been
-         * flushed.
-         */
-        	if (pte_present(pte))
+		 * for racing with page_mkclean(), the new one to
+		 * make sure the physical page stays valid until
+		 * the TLB entry for the old mapping has been
+		 * flushed.
+		 */
+		if (pte_present(pte))
 			force_flush = true;
 		pte = move_pte(pte, new_vma->vm_page_prot, old_addr, new_addr);
 		pte = move_soft_dirty_pte(pte);
@@ -173,8 +170,8 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 	}
 
 	arch_leave_lazy_mmu_mode();
-    if (force_flush)
-        flush_tlb_range(vma, old_end - len, old_end);
+	if (force_flush)
+		flush_tlb_range(vma, old_end - len, old_end);
 	if (new_ptl != old_ptl)
 		spin_unlock(new_ptl);
 	pte_unmap(new_pte - 1);
@@ -215,14 +212,14 @@ unsigned long move_page_tables(struct vm_area_struct *vma,
 		new_pmd = alloc_new_pmd(vma->vm_mm, vma, new_addr);
 		if (!new_pmd)
 			break;
-		if (pmd_trans_huge(*old_pmd)) {
+		if (pmd_trans_huge(*old_pmd) || pmd_devmap(*old_pmd)) {
 			if (extent == HPAGE_PMD_SIZE) {
 				bool moved;
 				/* See comment in move_ptes() */
 				if (need_rmap_locks)
 					take_rmap_locks(vma);
 				moved = move_huge_pmd(vma, old_addr, new_addr,
-                            old_end, old_pmd, new_pmd);
+						    old_end, old_pmd, new_pmd);
 				if (need_rmap_locks)
 					drop_rmap_locks(vma);
 				if (moved)
@@ -510,7 +507,6 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	unsigned long ret = -EINVAL;
 	unsigned long charged = 0;
 	bool locked = false;
-	bool downgraded = false;
 
 	if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE))
 		return ret;
@@ -544,19 +540,12 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	/*
 	 * Always allow a shrinking remap: that just unmaps
 	 * the unnecessary pages..
-	 * __do_munmap does all the needed commit accounting, and
-	 * downgrades mmap_sem to read if so directed.
+	 * do_munmap does all the needed commit accounting
 	 */
 	if (old_len >= new_len) {
-		int retval;
-
-		retval = __do_munmap(mm, addr+new_len, old_len - new_len, true);
-		if (retval < 0 && old_len != new_len) {
-			ret = retval;
+		ret = do_munmap(mm, addr+new_len, old_len - new_len);
+		if (ret && old_len != new_len)
 			goto out;
-		/* Returning 1 indicates mmap_sem is downgraded to read. */
-		} else if (retval == 1)
-			downgraded = true;
 		ret = addr;
 		goto out;
 	}
@@ -620,10 +609,7 @@ out:
 		vm_unacct_memory(charged);
 		locked = 0;
 	}
-	if (downgraded)
-		up_read(&current->mm->mmap_sem);
-	else
-		up_write(&current->mm->mmap_sem);
+	up_write(&current->mm->mmap_sem);
 	if (locked && new_len > old_len)
 		mm_populate(new_addr + old_len, new_len - old_len);
 	return ret;

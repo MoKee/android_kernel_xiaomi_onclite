@@ -573,10 +573,8 @@ static int skcipher_recvmsg_async(struct socket *sock, struct msghdr *msg,
 			 * need to expand */
 			tmp = kcalloc(tx_nents * 2, sizeof(*tmp),
 				      GFP_KERNEL);
-			if (!tmp) {
-				err = -ENOMEM;
+			if (!tmp)
 				goto free;
-			}
 
 			sg_init_table(tmp, tx_nents * 2);
 			for (x = 0; x < tx_nents; x++)

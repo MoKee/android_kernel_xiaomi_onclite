@@ -503,11 +503,6 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 			__func__, inst);
 		return -EINVAL;
 	}
-	if (inst->in_flush && inst->session_type == MSM_VIDC_DECODER &&
-				b->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
-		dprintk(VIDC_ERR, "%s: session in flush, discarding qbuf\n", __func__);
-		return -EINVAL;
-	}
 
 	for (i = 0; i < b->length; i++) {
 		b->m.planes[i].m.fd = b->m.planes[i].reserved[0];
@@ -1458,7 +1453,6 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	int rc = 0, c = 0;
 	struct msm_vidc_inst *inst;
-	const char *ctrl_name = NULL;
 
 	if (!ctrl) {
 		dprintk(VIDC_ERR, "%s invalid parameters for ctrl\n", __func__);
@@ -1482,12 +1476,9 @@ static int msm_vidc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 			}
 		}
 	}
-	if (rc) {
-		ctrl_name = v4l2_ctrl_get_name(ctrl->id);
+	if (rc)
 		dprintk(VIDC_ERR, "Failed setting control: Inst = %pK (%s)\n",
-			inst, ctrl_name ? ctrl_name : "Invalid ctrl");
-	}
-
+				inst, v4l2_ctrl_get_name(ctrl->id));
 	return rc;
 }
 
@@ -1752,7 +1743,7 @@ void *msm_vidc_open(int core_id, int session_type)
 		goto err_invalid_core;
 	}
 
-	pr_debug(VIDC_DBG_TAG "Opening video instance: %pK, %d\n",
+	pr_info(VIDC_DBG_TAG "Opening video instance: %pK, %d\n",
 		VIDC_MSG_PRIO2STRING(VIDC_INFO), inst, session_type);
 	mutex_init(&inst->sync_lock);
 	mutex_init(&inst->bufq[CAPTURE_PORT].lock);
@@ -2001,7 +1992,7 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
 
 	msm_vidc_debugfs_deinit_inst(inst);
 
-	pr_debug(VIDC_DBG_TAG "Closed video instance: %pK\n",
+	pr_info(VIDC_DBG_TAG "Closed video instance: %pK\n",
 			VIDC_MSG_PRIO2STRING(VIDC_INFO), inst);
 	kfree(inst);
 	return 0;

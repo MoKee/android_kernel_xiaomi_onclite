@@ -6065,7 +6065,7 @@ static void kvm_timer_init(void)
 	}
 	pr_debug("kvm: max_tsc_khz = %ld\n", max_tsc_khz);
 
-	cpuhp_setup_state(CPUHP_AP_X86_KVM_CLK_ONLINE, "x86/kvm/clk:online",
+	cpuhp_setup_state(CPUHP_AP_X86_KVM_CLK_ONLINE, "AP_X86_KVM_CLK_ONLINE",
 			  kvmclock_cpu_online, kvmclock_cpu_down_prep);
 }
 
@@ -8336,13 +8336,13 @@ int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 				      slot->base_gfn, level) + 1;
 
 		slot->arch.rmap[i] =
-			kvzalloc(lpages * sizeof(*slot->arch.rmap[i]), GFP_KERNEL);
+			kvm_kvzalloc(lpages * sizeof(*slot->arch.rmap[i]));
 		if (!slot->arch.rmap[i])
 			goto out_free;
 		if (i == 0)
 			continue;
 
-		linfo = kvzalloc(lpages * sizeof(*linfo), GFP_KERNEL);
+		linfo = kvm_kvzalloc(lpages * sizeof(*linfo));
 		if (!linfo)
 			goto out_free;
 

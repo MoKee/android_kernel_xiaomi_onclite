@@ -270,15 +270,11 @@ static void bio_free(struct bio *bio)
 	}
 }
 
-void bio_init(struct bio *bio, struct bio_vec *table,
-	      unsigned short max_vecs)
+void bio_init(struct bio *bio)
 {
 	memset(bio, 0, sizeof(*bio));
 	atomic_set(&bio->__bi_remaining, 1);
 	atomic_set(&bio->__bi_cnt, 1);
-
-	bio->bi_io_vec = table;
-	bio->bi_max_vecs = max_vecs;
 }
 EXPORT_SYMBOL(bio_init);
 
@@ -490,7 +486,7 @@ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
 		return NULL;
 
 	bio = p + front_pad;
-	bio_init(bio, NULL, 0);
+	bio_init(bio);
 
 	if (nr_iovecs > inline_vecs) {
 		unsigned long idx = 0;
@@ -876,55 +872,6 @@ done:
 }
 EXPORT_SYMBOL(bio_add_page);
 
-/**
- * bio_iov_iter_get_pages - pin user or kernel pages and add them to a bio
- * @bio: bio to add pages to
- * @iter: iov iterator describing the region to be mapped
- *
- * Pins as many pages from *iter and appends them to @bio's bvec array. The
- * pages will have to be released using put_page() when done.
- */
-int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
-{
-	unsigned short nr_pages = bio->bi_max_vecs - bio->bi_vcnt;
-	struct bio_vec *bv = bio->bi_io_vec + bio->bi_vcnt;
-	struct page **pages = (struct page **)bv;
-	size_t offset, diff;
-	ssize_t size;
-
-	size = iov_iter_get_pages(iter, pages, LONG_MAX, nr_pages, &offset);
-	if (unlikely(size <= 0))
-		return size ? size : -EFAULT;
-	nr_pages = (size + offset + PAGE_SIZE - 1) / PAGE_SIZE;
-
-	/*
-	 * Deep magic below:  We need to walk the pinned pages backwards
-	 * because we are abusing the space allocated for the bio_vecs
-	 * for the page array.  Because the bio_vecs are larger than the
-	 * page pointers by definition this will always work.  But it also
-	 * means we can't use bio_add_page, so any changes to it's semantics
-	 * need to be reflected here as well.
-	 */
-	bio->bi_iter.bi_size += size;
-	bio->bi_vcnt += nr_pages;
-
-	diff = (nr_pages * PAGE_SIZE - offset) - size;
-	while (nr_pages--) {
-		bv[nr_pages].bv_page = pages[nr_pages];
-		bv[nr_pages].bv_len = PAGE_SIZE;
-		bv[nr_pages].bv_offset = 0;
-	}
-
-	bv[0].bv_offset += offset;
-	bv[0].bv_len -= offset;
-	if (diff)
-		bv[bio->bi_vcnt - 1].bv_len -= diff;
-
-	iov_iter_advance(iter, size);
-	return 0;
-}
-EXPORT_SYMBOL_GPL(bio_iov_iter_get_pages);
-
 struct submit_bio_ret {
 	struct completion event;
 	int error;
@@ -959,25 +906,6 @@ int submit_bio_wait(struct bio *bio)
 	return ret.error;
 }
 EXPORT_SYMBOL(submit_bio_wait);
-
-static void submit_bio_nowait_endio(struct bio *bio)
-{
-	bio_put(bio);
-}
-
-/**
- * submit_bio_nowait - submit a bio for fire-and-forge for fire-and-forget
- * @bio: The &struct bio which describes the I/O
- *
- * Simple wrapper around submit_bio() that takes care of bio_put() on completion
- */
-void submit_bio_nowait(struct bio *bio)
-{
-	bio->bi_end_io = submit_bio_nowait_endio;
-	bio->bi_opf |= REQ_SYNC;
-	submit_bio(bio);
-}
-EXPORT_SYMBOL(submit_bio_nowait);
 
 /**
  * bio_advance - increment/complete a bio by some number of bytes
@@ -1422,7 +1350,7 @@ struct bio *bio_map_user_iov(struct request_queue *q,
 
 			if (len <= 0)
 				break;
-
+			
 			if (bytes > len)
 				bytes = len;
 

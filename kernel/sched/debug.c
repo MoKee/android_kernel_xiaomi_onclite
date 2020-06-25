@@ -459,11 +459,9 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 		P_SCHEDSTAT(se->statistics.wait_count);
 	}
 	P(se->load.weight);
-	P(se->runnable_weight);
 #ifdef CONFIG_SMP
 	P(se->avg.load_avg);
 	P(se->avg.util_avg);
-	P(se->avg.runnable_load_avg);
 #endif
 
 #undef PN_SCHEDSTAT
@@ -486,15 +484,13 @@ static char *task_group_path(struct task_group *tg)
 }
 #endif
 
-static const char stat_nam[] = TASK_STATE_TO_CHAR_STR;
-
 static void
 print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 {
 	if (rq->curr == p)
-		SEQ_printf(m, ">R");
+		SEQ_printf(m, "R");
 	else
-		SEQ_printf(m, " %c", task_state_to_char(p));
+		SEQ_printf(m, " ");
 
 	SEQ_printf(m, "%15s %5d %9Ld.%06ld %9Ld %5d ",
 		p->comm, task_pid_nr(p),
@@ -523,9 +519,9 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 
 	SEQ_printf(m,
 	"\nrunnable tasks:\n"
-	" S           task   PID         tree-key  switches  prio"
+	"            task   PID         tree-key  switches  prio"
 	"     wait-time             sum-exec        sum-sleep\n"
-	"-------------------------------------------------------"
+	"------------------------------------------------------"
 	"----------------------------------------------------\n");
 
 	rcu_read_lock();
@@ -555,7 +551,7 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			SPLIT_NS(cfs_rq->exec_clock));
 
 	raw_spin_lock_irqsave(&rq->lock, flags);
-	if (rb_first_cached(&cfs_rq->tasks_timeline))
+	if (cfs_rq->rb_leftmost)
 		MIN_vruntime = (__pick_first_entity(cfs_rq))->vruntime;
 	last = __pick_last_entity(cfs_rq);
 	if (last)
@@ -580,21 +576,16 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_running", cfs_rq->nr_running);
 	SEQ_printf(m, "  .%-30s: %ld\n", "load", cfs_rq->load.weight);
 #ifdef CONFIG_SMP
-	SEQ_printf(m, "  .%-30s: %ld\n", "runnable_weight", cfs_rq->runnable_weight);
 	SEQ_printf(m, "  .%-30s: %lu\n", "load_avg",
 			cfs_rq->avg.load_avg);
 	SEQ_printf(m, "  .%-30s: %lu\n", "runnable_load_avg",
-			cfs_rq->avg.runnable_load_avg);
+			cfs_rq->runnable_load_avg);
 	SEQ_printf(m, "  .%-30s: %lu\n", "util_avg",
 			cfs_rq->avg.util_avg);
-	SEQ_printf(m, "  .%-30s: %u\n", "util_est_enqueued",
-			cfs_rq->avg.util_est.enqueued);
-	SEQ_printf(m, "  .%-30s: %ld\n", "removed.load_avg",
-			cfs_rq->removed.load_avg);
-	SEQ_printf(m, "  .%-30s: %ld\n", "removed.util_avg",
-			cfs_rq->removed.util_avg);
-	SEQ_printf(m, "  .%-30s: %ld\n", "removed.runnable_sum",
-			cfs_rq->removed.runnable_sum);
+	SEQ_printf(m, "  .%-30s: %ld\n", "removed_load_avg",
+			atomic_long_read(&cfs_rq->removed_load_avg));
+	SEQ_printf(m, "  .%-30s: %ld\n", "removed_util_avg",
+			atomic_long_read(&cfs_rq->removed_util_avg));
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	SEQ_printf(m, "  .%-30s: %lu\n", "tg_load_avg_contrib",
 			cfs_rq->tg_load_avg_contrib);
@@ -820,7 +811,6 @@ static int sched_debug_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-#ifdef CONFIG_SYSRQ_SCHED_DEBUG
 void sysrq_sched_debug_show(void)
 {
 	int cpu;
@@ -830,7 +820,6 @@ void sysrq_sched_debug_show(void)
 		print_cpu(NULL, cpu);
 
 }
-#endif
 
 /*
  * This itererator needs some explanation.
@@ -1028,6 +1017,7 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 		P_SCHEDSTAT(se.statistics.nr_wakeups_sis_count);
 		/* select_energy_cpu_brute() */
 		P_SCHEDSTAT(se.statistics.nr_wakeups_secb_attempts);
+		P_SCHEDSTAT(se.statistics.nr_wakeups_secb_sync);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_secb_idle_bt);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_secb_insuff_cap);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_secb_no_nrg_sav);
@@ -1072,17 +1062,12 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 		   "nr_involuntary_switches", (long long)p->nivcsw);
 
 	P(se.load.weight);
-	P(se.runnable_weight);
 #ifdef CONFIG_SMP
 	P(se.avg.load_sum);
-	P(se.avg.runnable_load_sum);
 	P(se.avg.util_sum);
 	P(se.avg.load_avg);
-	P(se.avg.runnable_load_avg);
 	P(se.avg.util_avg);
 	P(se.avg.last_update_time);
-	P(se.avg.util_est.ewma);
-	P(se.avg.util_est.enqueued);
 #endif
 	P(policy);
 	P(prio);

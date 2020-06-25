@@ -1204,7 +1204,7 @@ __rt_mutex_slowlock(struct rt_mutex *lock, int state,
 		 * TASK_INTERRUPTIBLE checks for signals and
 		 * timeout. Ignored otherwise.
 		 */
-		if (likely(state == TASK_INTERRUPTIBLE)) {
+		if (unlikely(state == TASK_INTERRUPTIBLE)) {
 			/* Signal pending? */
 			if (signal_pending(current))
 				ret = -EINTR;
@@ -1644,15 +1644,11 @@ EXPORT_SYMBOL_GPL(__rt_mutex_init);
  * rt_mutex_init_proxy_locked - initialize and lock a rt_mutex on behalf of a
  *				proxy owner
  *
- * @lock:	the rt_mutex to be locked
+ * @lock: 	the rt_mutex to be locked
  * @proxy_owner:the task to set as owner
  *
  * No locking. Caller has to do serializing itself
- *
- * Special API call for PI-futex support. This initializes the rtmutex and
- * assigns it to @proxy_owner. Concurrent operations on the rtmutex are not
- * possible at this point because the pi_state which contains the rtmutex
- * is not yet visible to other tasks.
+ * Special API call for PI-futex support
  */
 void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
 				struct task_struct *proxy_owner)
@@ -1666,14 +1662,10 @@ void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
 /**
  * rt_mutex_proxy_unlock - release a lock on behalf of owner
  *
- * @lock:	the rt_mutex to be locked
+ * @lock: 	the rt_mutex to be locked
  *
  * No locking. Caller has to do serializing itself
- *
- * Special API call for PI-futex support. This merrily cleans up the rtmutex
- * (debugging) state. Concurrent operations on this rt_mutex are not
- * possible because it belongs to the pi_state which is about to be freed
- * and it is not longer visible to other tasks.
+ * Special API call for PI-futex support
  */
 void rt_mutex_proxy_unlock(struct rt_mutex *lock,
 			   struct task_struct *proxy_owner)

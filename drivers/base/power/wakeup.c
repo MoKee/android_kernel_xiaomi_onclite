@@ -23,18 +23,6 @@
 
 #include "power.h"
 
-
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-#include "boeffla_wl_blocker.h"
-
-char list_wl_search[LENGTH_LIST_WL_SEARCH] = {0};
-bool wl_blocker_active = false;
-bool wl_blocker_debug = false;
-
-static void wakeup_source_deactivate(struct wakeup_source *ws);
-#endif
-
-
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
  * if wakeup events are registered during or immediately before the transition.
@@ -44,8 +32,8 @@ bool events_check_enabled __read_mostly;
 /* First wakeup IRQ seen by the kernel in the last cycle. */
 unsigned int pm_wakeup_irq __read_mostly;
 
-/* If greater than 0 and the system is suspending, terminate the suspend. */
-static atomic_t pm_abort_suspend __read_mostly;
+/* If set and the system is suspending, terminate the suspend. */
+static bool pm_abort_suspend __read_mostly;
 
 /*
  * Combined counters of registered wakeup events and wakeup events in progress.
@@ -68,7 +56,7 @@ static void split_counters(unsigned int *cnt, unsigned int *inpr)
 /* A preserved old value of the events counter. */
 static unsigned int saved_count;
 
-static DEFINE_RAW_SPINLOCK(events_lock);
+static DEFINE_SPINLOCK(events_lock);
 
 static void pm_wakeup_timer_fn(unsigned long data);
 
@@ -195,9 +183,9 @@ void wakeup_source_add(struct wakeup_source *ws)
 	ws->active = false;
 	ws->last_time = ktime_get();
 
-	raw_spin_lock_irqsave(&events_lock, flags);
+	spin_lock_irqsave(&events_lock, flags);
 	list_add_rcu(&ws->entry, &wakeup_sources);
-	raw_spin_unlock_irqrestore(&events_lock, flags);
+	spin_unlock_irqrestore(&events_lock, flags);
 }
 EXPORT_SYMBOL_GPL(wakeup_source_add);
 
@@ -212,9 +200,9 @@ void wakeup_source_remove(struct wakeup_source *ws)
 	if (WARN_ON(!ws))
 		return;
 
-	raw_spin_lock_irqsave(&events_lock, flags);
+	spin_lock_irqsave(&events_lock, flags);
 	list_del_rcu(&ws->entry);
-	raw_spin_unlock_irqrestore(&events_lock, flags);
+	spin_unlock_irqrestore(&events_lock, flags);
 	synchronize_srcu(&wakeup_srcu);
 
 	del_timer_sync(&ws->timer);
@@ -549,6 +537,12 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 			"unregistered wakeup source\n"))
 		return;
 
+	/*
+	 * active wakeup source should bring the system
+	 * out of PM_SUSPEND_FREEZE state
+	 */
+	freeze_wake();
+
 	ws->active = true;
 	ws->active_count++;
 	ws->last_time = ktime_get();
@@ -561,81 +555,19 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	trace_wakeup_source_activate(ws->name, cec);
 }
 
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-// AP: Function to check if a wakelock is on the wakelock blocker list
-static bool check_for_block(struct wakeup_source *ws)
-{
-	char wakelock_name[52] = {0};
-	int length;
-
-	// if debug mode on, print every wakelock requested
-	if (wl_blocker_debug)
-		printk("Boeffla WL blocker: %s requested\n", ws->name);
-
-	// if there is no list of wakelocks to be blocked, exit without futher checking
-	if (!wl_blocker_active)
-		return false;
-
-	// only if ws structure is valid
-	if (ws)
-	{
-		// wake lock names handled have maximum length=50 and minimum=1
-		length = strlen(ws->name);
-		if ((length > 50) || (length < 1))
-			return false;
-
-		// check if wakelock is in wake lock list to be blocked
-		sprintf(wakelock_name, ";%s;", ws->name);
-
-		if(strstr(list_wl_search, wakelock_name) == NULL)
-			return false;
-
-		// wake lock is in list, print it if debug mode on
-		if (wl_blocker_debug)
-			printk("Boeffla WL blocker: %s blocked\n", ws->name);
-
-		// if it is currently active, deactivate it immediately + log in debug mode
-		if (ws->active)
-		{
-			wakeup_source_deactivate(ws);
-
-			if (wl_blocker_debug)
-				printk("Boeffla WL blocker: %s killed\n", ws->name);
-		}
-
-		// finally block it
-		return true;
-	}
-
-	// there was no valid ws structure, do not block by default
-	return false;
-}
-#endif
-
 /**
  * wakeup_source_report_event - Report wakeup event using the given source.
  * @ws: Wakeup source to report the event for.
- * @hard: If set, abort suspends in progress and wake up from suspend-to-idle.
  */
-static void wakeup_source_report_event(struct wakeup_source *ws, bool hard)
+static void wakeup_source_report_event(struct wakeup_source *ws)
 {
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-	if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
-	{
-#endif
-		ws->event_count++;
-		/* This is racy, but the counter is approximate anyway. */
-		if (events_check_enabled)
-			ws->wakeup_count++;
+	ws->event_count++;
+	/* This is racy, but the counter is approximate anyway. */
+	if (events_check_enabled)
+		ws->wakeup_count++;
 
-		if (!ws->active)
-			wakeup_source_activate(ws);
-
-		if (hard)
-			pm_system_wakeup();
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-	}
-#endif
+	if (!ws->active)
+		wakeup_source_activate(ws);
 }
 
 /**
@@ -653,14 +585,13 @@ void __pm_stay_awake(struct wakeup_source *ws)
 
 	spin_lock_irqsave(&ws->lock, flags);
 
-	wakeup_source_report_event(ws, false);
+	wakeup_source_report_event(ws);
 	del_timer(&ws->timer);
 	ws->timer_expires = 0;
 
 	spin_unlock_irqrestore(&ws->lock, flags);
 }
 EXPORT_SYMBOL_GPL(__pm_stay_awake);
-
 
 /**
  * pm_stay_awake - Notify the PM core that a wakeup event is being processed.
@@ -820,10 +751,9 @@ static void pm_wakeup_timer_fn(unsigned long data)
 }
 
 /**
- * pm_wakeup_ws_event - Notify the PM core of a wakeup event.
+ * __pm_wakeup_event - Notify the PM core of a wakeup event.
  * @ws: Wakeup source object associated with the event source.
  * @msec: Anticipated event processing time (in milliseconds).
- * @hard: If set, abort suspends in progress and wake up from suspend-to-idle.
  *
  * Notify the PM core of a wakeup event whose source is @ws that will take
  * approximately @msec milliseconds to be processed by the kernel.  If @ws is
@@ -832,7 +762,7 @@ static void pm_wakeup_timer_fn(unsigned long data)
  *
  * It is safe to call this function from interrupt context.
  */
-void pm_wakeup_ws_event(struct wakeup_source *ws, unsigned int msec, bool hard)
+void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec)
 {
 	unsigned long flags;
 	unsigned long expires;
@@ -842,7 +772,7 @@ void pm_wakeup_ws_event(struct wakeup_source *ws, unsigned int msec, bool hard)
 
 	spin_lock_irqsave(&ws->lock, flags);
 
-	wakeup_source_report_event(ws, hard);
+	wakeup_source_report_event(ws);
 
 	if (!msec) {
 		wakeup_source_deactivate(ws);
@@ -861,17 +791,17 @@ void pm_wakeup_ws_event(struct wakeup_source *ws, unsigned int msec, bool hard)
  unlock:
 	spin_unlock_irqrestore(&ws->lock, flags);
 }
-EXPORT_SYMBOL_GPL(pm_wakeup_ws_event);
+EXPORT_SYMBOL_GPL(__pm_wakeup_event);
+
 
 /**
  * pm_wakeup_event - Notify the PM core of a wakeup event.
  * @dev: Device the wakeup event is related to.
  * @msec: Anticipated event processing time (in milliseconds).
- * @hard: If set, abort suspends in progress and wake up from suspend-to-idle.
  *
- * Call pm_wakeup_ws_event() for the @dev's wakeup source object.
+ * Call __pm_wakeup_event() for the @dev's wakeup source object.
  */
-void pm_wakeup_dev_event(struct device *dev, unsigned int msec, bool hard)
+void pm_wakeup_event(struct device *dev, unsigned int msec)
 {
 	unsigned long flags;
 
@@ -879,10 +809,10 @@ void pm_wakeup_dev_event(struct device *dev, unsigned int msec, bool hard)
 		return;
 
 	spin_lock_irqsave(&dev->power.lock, flags);
-	pm_wakeup_ws_event(dev->power.wakeup, msec, hard);
+	__pm_wakeup_event(dev->power.wakeup, msec);
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 }
-EXPORT_SYMBOL_GPL(pm_wakeup_dev_event);
+EXPORT_SYMBOL_GPL(pm_wakeup_event);
 
 void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 {
@@ -925,11 +855,8 @@ void pm_print_active_wakeup_sources(void)
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
-			pr_debug("active wakeup source: %s\n", ws->name);
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-			if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
-#endif
-				active = 1;
+			pr_info("active wakeup source: %s\n", ws->name);
+			active = 1;
 		} else if (!active &&
 			   (!last_activity_ws ||
 			    ktime_to_ns(ws->last_time) >
@@ -939,7 +866,7 @@ void pm_print_active_wakeup_sources(void)
 	}
 
 	if (!active && last_activity_ws)
-		pr_debug("last active wakeup source: %s\n",
+		pr_info("last active wakeup source: %s\n",
 			last_activity_ws->name);
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
@@ -958,7 +885,7 @@ bool pm_wakeup_pending(void)
 	unsigned long flags;
 	bool ret = false;
 
-	raw_spin_lock_irqsave(&events_lock, flags);
+	spin_lock_irqsave(&events_lock, flags);
 	if (events_check_enabled) {
 		unsigned int cnt, inpr;
 
@@ -966,33 +893,27 @@ bool pm_wakeup_pending(void)
 		ret = (cnt != saved_count || inpr > 0);
 		events_check_enabled = !ret;
 	}
-	raw_spin_unlock_irqrestore(&events_lock, flags);
+	spin_unlock_irqrestore(&events_lock, flags);
 
 	if (ret) {
 		pr_info("PM: Wakeup pending, aborting suspend\n");
 		pm_print_active_wakeup_sources();
 	}
 
-	return ret || atomic_read(&pm_abort_suspend) > 0;
+	return ret || pm_abort_suspend;
 }
 
 void pm_system_wakeup(void)
 {
-	atomic_inc(&pm_abort_suspend);
+	pm_abort_suspend = true;
 	freeze_wake();
 }
 EXPORT_SYMBOL_GPL(pm_system_wakeup);
 
-void pm_system_cancel_wakeup(void)
+void pm_wakeup_clear(void)
 {
-	atomic_dec(&pm_abort_suspend);
-}
-
-void pm_wakeup_clear(bool reset)
-{
+	pm_abort_suspend = false;
 	pm_wakeup_irq = 0;
-	if (reset)
-		atomic_set(&pm_abort_suspend, 0);
 }
 
 void pm_system_irq_wakeup(unsigned int irq_number)
@@ -1042,7 +963,7 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 			split_counters(&cnt, &inpr);
 			if (inpr == 0 || signal_pending(current))
 				break;
-			pm_print_active_wakeup_sources();
+
 			schedule();
 		}
 		finish_wait(&wakeup_count_wait_queue, &wait);
@@ -1069,13 +990,13 @@ bool pm_save_wakeup_count(unsigned int count)
 	unsigned long flags;
 
 	events_check_enabled = false;
-	raw_spin_lock_irqsave(&events_lock, flags);
+	spin_lock_irqsave(&events_lock, flags);
 	split_counters(&cnt, &inpr);
 	if (cnt == count && inpr == 0) {
 		saved_count = count;
 		events_check_enabled = true;
 	}
-	raw_spin_unlock_irqrestore(&events_lock, flags);
+	spin_unlock_irqrestore(&events_lock, flags);
 	return events_check_enabled;
 }
 

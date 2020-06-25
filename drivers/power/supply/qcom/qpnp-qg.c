@@ -1,4 +1,5 @@
 /* Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1576,37 +1577,6 @@ static int qg_get_charge_counter(struct qpnp_qg *chip, int *charge_counter)
 	return 0;
 }
 
-static int qg_get_charge_raw(struct qpnp_qg *chip, int *charge_raw)
-{
-	int rc, cur_soc = 0;
-	int64_t capacity = 0;
-
-	if (is_debug_batt_id(chip) || chip->battery_missing) {
-		*charge_raw = -EINVAL;
-		return 0;
-	}
-
-	rc = qg_get_learned_capacity(chip, &capacity);
-	if (rc < 0 || !capacity)
-		rc = qg_get_nominal_capacity((int *)&capacity, 250, true);
-
-	if (rc < 0) {
-		pr_err("Failed to obtain max capacity for charge-raw rc=%d\n", rc);
-		return rc;
-	}
-
-	rc = qg_get_battery_capacity(chip, &cur_soc);
-	if (rc < 0) {
-		pr_err("Failed to obtain current capacity for charge-raw rc=%d\n", rc);
-		return rc;
-	}
-
-	// current capacity = (current charge/100) * max capacity
-	*charge_raw = div_s64(capacity * cur_soc, 100);
-
-	return 0;
-}
-
 static int qg_get_ttf_param(void *data, enum ttf_param param, int *val)
 {
 	union power_supply_propval prop = {0, };
@@ -1844,9 +1814,6 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_QG_VBMS_MODE:
 		pval->intval = !!chip->dt.qg_vbms_mode;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_NOW_RAW:
-		rc = qg_get_charge_raw(chip, &pval->intval);
-		break;
 	default:
 		pr_debug("Unsupported property %d\n", psp);
 		break;
@@ -1900,7 +1867,6 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_SOH,
 	POWER_SUPPLY_PROP_CC_SOC,
 	POWER_SUPPLY_PROP_QG_VBMS_MODE,
-	POWER_SUPPLY_PROP_CHARGE_NOW_RAW,
 };
 
 static const struct power_supply_desc qg_psy_desc = {
@@ -2327,6 +2293,12 @@ static ssize_t qg_device_read(struct file *file, char __user *buf, size_t count,
 	int rc;
 	struct qpnp_qg *chip = file->private_data;
 	unsigned long data_size = sizeof(chip->kdata);
+
+	if (count < data_size) {
+		pr_err("Invalid datasize %lu, expected lesser then %zu\n",
+							data_size, count);
+		return -EINVAL;
+	}
 
 	/* non-blocking access, return */
 	if (!chip->data_ready && (file->f_flags & O_NONBLOCK))
@@ -2840,6 +2812,39 @@ static int qg_set_wa_flags(struct qpnp_qg *chip)
 	qg_dbg(chip, QG_DEBUG_PON, "wa_flags = %x\n", chip->wa_flags);
 
 	return 0;
+}
+
+#define SDAM_MAGIC_NUMBER		0x12345678
+static int qg_sanitize_sdam(struct qpnp_qg *chip)
+{
+	int rc = 0;
+	u32 data = 0;
+
+	rc = qg_sdam_read(SDAM_MAGIC, &data);
+	if (rc < 0) {
+		pr_err("Failed to read SDAM rc=%d\n", rc);
+		return rc;
+	}
+
+	if (data == SDAM_MAGIC_NUMBER) {
+		qg_dbg(chip, QG_DEBUG_PON, "SDAM valid\n");
+	} else if (data == 0) {
+		rc = qg_sdam_write(SDAM_MAGIC, SDAM_MAGIC_NUMBER);
+		if (!rc)
+			qg_dbg(chip, QG_DEBUG_PON, "First boot. SDAM initilized\n");
+	} else {
+		/* SDAM has invalid value */
+		rc = qg_sdam_clear();
+		if (!rc) {
+			pr_err("SDAM uninitialized, SDAM reset\n");
+			rc = qg_sdam_write(SDAM_MAGIC, SDAM_MAGIC_NUMBER);
+		}
+	}
+
+	if (rc < 0)
+		pr_err("Failed in SDAM operation, rc=%d\n", rc);
+
+	return rc;
 }
 
 #define ADC_CONV_DLY_512MS		0xA
@@ -3866,6 +3871,12 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	rc = qg_sdam_init(chip->dev);
 	if (rc < 0) {
 		pr_err("Failed to initialize QG SDAM, rc=%d\n", rc);
+		return rc;
+	}
+
+	rc = qg_sanitize_sdam(chip);
+	if (rc < 0) {
+		pr_err("Failed to sanitize SDAM, rc=%d\n", rc);
 		return rc;
 	}
 

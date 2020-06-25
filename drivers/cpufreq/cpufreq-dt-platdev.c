@@ -101,4 +101,4 @@ static int __init cpufreq_dt_platdev_init(void)
 			       -1, match->data,
 			       sizeof(struct cpufreq_dt_platform_data)));
 }
-core_initcall(cpufreq_dt_platdev_init);
+device_initcall(cpufreq_dt_platdev_init);

@@ -1062,8 +1062,8 @@ static void gic_smp_init(void)
 {
 	set_smp_cross_call(gic_raise_softirq);
 	cpuhp_setup_state_nocalls(CPUHP_AP_IRQ_GICV3_STARTING,
-				  "irqchip/arm/gicv3:starting",
-				  gic_starting_cpu, NULL);
+				  "AP_IRQ_GICV3_STARTING", gic_starting_cpu,
+				  NULL);
 }
 
 static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
@@ -1098,8 +1098,6 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 		gic_unmask_irq(d);
 	else
 		gic_dist_wait_for_rwp();
-
-	irq_data_update_effective_affinity(d, cpumask_of(cpu));
 
 	return IRQ_SET_MASK_OK_DONE;
 }
@@ -1202,7 +1200,6 @@ static int gic_irq_domain_map(struct irq_domain *d, unsigned int irq,
 		irq_domain_set_info(d, irq, hw, chip, d->host_data,
 				    handle_fasteoi_irq, NULL, NULL);
 		irq_set_probe(irq);
-		irqd_set_single_target(irq_desc_get_irq_data(irq_to_desc(irq)));
 	}
 	/* LPIs */
 	if (hw >= 8192 && hw < GIC_ID_NR) {

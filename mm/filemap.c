@@ -431,16 +431,17 @@ int filemap_flush(struct address_space *mapping)
 }
 EXPORT_SYMBOL(filemap_flush);
 
-static void __filemap_fdatawait_range(struct address_space *mapping,
+static int __filemap_fdatawait_range(struct address_space *mapping,
 				     loff_t start_byte, loff_t end_byte)
 {
 	pgoff_t index = start_byte >> PAGE_SHIFT;
 	pgoff_t end = end_byte >> PAGE_SHIFT;
 	struct pagevec pvec;
 	int nr_pages;
+	int ret = 0;
 
 	if (end_byte < start_byte)
-		return;
+		goto out;
 
 	pagevec_init(&pvec, 0);
 	while (index <= end) {
@@ -455,11 +456,14 @@ static void __filemap_fdatawait_range(struct address_space *mapping,
 			struct page *page = pvec.pages[i];
 
 			wait_on_page_writeback(page);
-			ClearPageError(page);
+			if (TestClearPageError(page))
+				ret = -EIO;
 		}
 		pagevec_release(&pvec);
 		cond_resched();
 	}
+out:
+	return ret;
 }
 
 /**
@@ -479,8 +483,14 @@ static void __filemap_fdatawait_range(struct address_space *mapping,
 int filemap_fdatawait_range(struct address_space *mapping, loff_t start_byte,
 			    loff_t end_byte)
 {
-	__filemap_fdatawait_range(mapping, start_byte, end_byte);
-	return filemap_check_errors(mapping);
+	int ret, ret2;
+
+	ret = __filemap_fdatawait_range(mapping, start_byte, end_byte);
+	ret2 = filemap_check_errors(mapping);
+	if (!ret)
+		ret = ret2;
+
+	return ret;
 }
 EXPORT_SYMBOL(filemap_fdatawait_range);
 
@@ -1848,9 +1858,7 @@ static ssize_t do_generic_file_read(struct file *filp, loff_t *ppos,
 		pgoff_t end_index;
 		loff_t isize;
 		unsigned long nr, ret;
-		ktime_t event_ts;
 
-		event_ts.tv64 = 0;
 		cond_resched();
 find_page:
 		if (fatal_signal_pending(current)) {
@@ -1860,7 +1868,6 @@ find_page:
 
 		page = find_get_page(mapping, index);
 		if (!page) {
-			mm_event_start(&event_ts);
 			page_cache_sync_readahead(mapping,
 					ra, filp,
 					index, last_index - index);
@@ -1902,8 +1909,6 @@ find_page:
 			unlock_page(page);
 		}
 page_ok:
-		if (event_ts.tv64 != 0)
-			mm_event_end(MM_READ_IO, event_ts);
 		/*
 		 * i_size must be checked after we know the page is Uptodate.
 		 *
@@ -2742,9 +2747,6 @@ inline ssize_t generic_write_checks(struct kiocb *iocb, struct iov_iter *from)
 	struct inode *inode = file->f_mapping->host;
 	unsigned long limit = rlimit(RLIMIT_FSIZE);
 	loff_t pos;
-
-	if (IS_SWAPFILE(inode))
-		return -ETXTBSY;
 
 	if (!iov_iter_count(from))
 		return 0;

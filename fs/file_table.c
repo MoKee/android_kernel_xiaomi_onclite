@@ -261,12 +261,6 @@ void flush_delayed_fput(void)
 
 static DECLARE_DELAYED_WORK(delayed_fput_work, delayed_fput);
 
-void flush_delayed_fput_wait(void)
-{
-	delayed_fput(NULL);
-	flush_delayed_work(&delayed_fput_work);
-}
-
 void fput(struct file *file)
 {
 	if (atomic_long_dec_and_test(&file->f_count)) {
@@ -329,10 +323,10 @@ void __init files_init(void)
 void __init files_maxfiles_init(void)
 {
 	unsigned long n;
-	unsigned long memreserve = (totalram_pages() - nr_free_pages()) * 3/2;
+	unsigned long memreserve = (totalram_pages - nr_free_pages()) * 3/2;
 
-	memreserve = min(memreserve, totalram_pages() - 1);
-	n = ((totalram_pages() - memreserve) * (PAGE_SIZE / 1024)) / 10;
+	memreserve = min(memreserve, totalram_pages - 1);
+	n = ((totalram_pages - memreserve) * (PAGE_SIZE / 1024)) / 10;
 
 	files_stat.max_files = max_t(unsigned long, n, NR_FILE);
 } 

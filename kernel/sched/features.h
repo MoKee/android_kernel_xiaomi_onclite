@@ -61,7 +61,6 @@ SCHED_FEAT(TTWU_QUEUE, false)
  * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
  */
 SCHED_FEAT(SIS_AVG_CPU, false)
-SCHED_FEAT(SIS_PROP, true)
 
 #ifdef HAVE_RT_PUSH_IPI
 /*
@@ -80,15 +79,6 @@ SCHED_FEAT(FORCE_SD_OVERLAP, false)
 SCHED_FEAT(RT_RUNTIME_SHARE, true)
 SCHED_FEAT(LB_MIN, false)
 SCHED_FEAT(ATTACH_AGE_LOAD, true)
-SCHED_FEAT(WA_IDLE, true)
-SCHED_FEAT(WA_WEIGHT, true)
-SCHED_FEAT(WA_BIAS, true)
-
-/*
- * UtilEstimation. Use estimated CPU utilization.
- */
-SCHED_FEAT(UTIL_EST, true)
-SCHED_FEAT(UTIL_EST_FASTUP, true)
 
 /*
  * Energy aware scheduling. Use platform energy model to guide scheduling
@@ -101,40 +91,22 @@ SCHED_FEAT(ENERGY_AWARE, false)
 #endif
 
 /*
- * Apply schedtune boost hold to tasks of all sched classes.
- * If enabled, schedtune will hold the boost applied to a CPU
- * for 50ms regardless of task activation - if the task is
- * still running 50ms later, the boost hold expires and schedtune
- * boost will expire immediately the task stops.
- * If disabled, this behaviour will only apply to tasks of the
- * RT class.
+ * Minimum capacity capping. Keep track of minimum capacity factor when
+ * minimum frequency available to a policy is modified.
+ * If enabled, this can be used to inform the scheduler about capacity
+ * restrictions.
  */
-SCHED_FEAT(SCHEDTUNE_BOOST_HOLD_ALL, false)
+SCHED_FEAT(MIN_CAPACITY_CAPPING, false)
 
 /*
- * Inflate the effective utilization of SchedTune-boosted tasks, which
- * generally leads to usage of higher frequencies.
- * If disabled, boosts will only bias tasks to higher-capacity CPUs.
+ * Enforce the priority of candidates selected by find_best_target()
+ * ON: If the target CPU saves any energy, use that.
+ * OFF: Use whichever of target or backup saves most.
  */
-SCHED_FEAT(SCHEDTUNE_BOOST_UTIL, false)
-SCHED_FEAT(HISI_FILTER, true)
-
+SCHED_FEAT(FBT_STRICT_ORDER, false)
 /*
- * Use the Simplified Energy Model for EAS accounting only for
- * active costs of CPUs.
+ * Enforce schedtune.prefer_idle to take need_idle path.
+ * ON: schedtune.prefer_idle is replaced with need_idle
+ * OFF: schedtune.prefer_idle is honored as is.
  */
-SCHED_FEAT(EAS_SIMPLIFIED_EM, true)
-
-/*
- * Fast pre-selection of CPU candidates for EAS.
- */
-SCHED_FEAT(FIND_BEST_TARGET, true)
-
-/*
- * Energy aware scheduling algorithm choices:
- * EAS_PREFER_IDLE
- *   Direct tasks in a schedtune.prefer_idle=1 group through
- *   the EAS path for wakeup task placement. Otherwise, put
- *   those tasks through the mainline slow path.
- */
-SCHED_FEAT(EAS_PREFER_IDLE, true)
+SCHED_FEAT(EAS_USE_NEED_IDLE, true)

@@ -1,4 +1,5 @@
 /* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -147,7 +148,7 @@ static int msm_digcdc_clock_control(bool flag)
 			}
 			pr_debug("enabled digital codec core clk\n");
 			atomic_set(&pdata->int_mclk0_enabled, true);
-			queue_delayed_work(system_power_efficient_wq,&pdata->disable_int_mclk0_work,
+			schedule_delayed_work(&pdata->disable_int_mclk0_work,
 					      50);
 		}
 	} else {
@@ -1017,13 +1018,13 @@ static int msm_dig_cdc_codec_enable_dec(struct snd_soc_dapm_widget *w,
 		/* enable HPF */
 		snd_soc_update_bits(codec, tx_mux_ctl_reg, 0x08, 0x00);
 
-		queue_delayed_work(system_power_efficient_wq,
+		schedule_delayed_work(
 			    &msm_dig_cdc->tx_mute_dwork[decimator - 1].dwork,
 			    msecs_to_jiffies(tx_unmute_delay));
 		if (tx_hpf_work[decimator - 1].tx_hpf_cut_of_freq !=
 				CF_MIN_3DB_150HZ) {
 
-			queue_delayed_work(system_power_efficient_wq, &tx_hpf_work[decimator - 1].dwork,
+			schedule_delayed_work(&tx_hpf_work[decimator - 1].dwork,
 					msecs_to_jiffies(300));
 		}
 		/* apply the digital gain after the decimator is enabled*/
@@ -2487,7 +2488,7 @@ static int msm_dig_cdc_probe(struct platform_device *pdev)
 
 	adsp_state = apr_get_subsys_state();
 	if ((adsp_state != APR_SUBSYS_LOADED) || (!q6core_is_adsp_ready())) {
-		dev_dbg(&pdev->dev, "Adsp is not loaded yet %d\n",
+		dev_err(&pdev->dev, "Adsp is not loaded yet %d\n",
 			adsp_state);
 		return -EPROBE_DEFER;
 	}

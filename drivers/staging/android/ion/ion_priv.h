@@ -203,7 +203,7 @@ struct ion_heap_ops {
 struct ion_heap {
 	struct plist_node node;
 	struct ion_device *dev;
-	unsigned int type;
+	enum ion_heap_type type;
 	struct ion_heap_ops *ops;
 	unsigned long flags;
 	unsigned int id;
@@ -459,7 +459,6 @@ void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
  * @gfp_mask:		gfp_mask to use from alloc
  * @order:		order of pages in the pool
  * @list:		plist node for list of pools
- * @inode:		inode for ion_pool pseudo filesystem
  *
  * Allows you to keep a pool of pre allocated pages to use from your heap.
  * Keeping a pool of pages that is ready for dma, ie any cached mapping have
@@ -476,11 +475,10 @@ struct ion_page_pool {
 	gfp_t gfp_mask;
 	unsigned int order;
 	struct plist_node list;
-	struct inode *inode;
 };
 
 struct ion_page_pool *ion_page_pool_create(struct device *dev, gfp_t gfp_mask,
-					   unsigned int order, bool movable);
+					   unsigned int order);
 void ion_page_pool_destroy(struct ion_page_pool *);
 void *ion_page_pool_alloc(struct ion_page_pool *a, bool *from_pool);
 void *ion_page_pool_alloc_pool_only(struct ion_page_pool *a);
@@ -541,7 +539,7 @@ void ion_pages_sync_for_device(struct device *dev, struct page *page,
 		size_t size, enum dma_data_direction dir);
 
 int ion_walk_heaps(struct ion_client *client, int heap_id,
-		   unsigned int type, void *data,
+		   enum ion_heap_type type, void *data,
 		   int (*f)(struct ion_heap *heap, void *data));
 
 struct ion_handle *ion_handle_get_by_id_nolock(struct ion_client *client,

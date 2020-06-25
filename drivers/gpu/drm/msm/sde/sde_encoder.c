@@ -5270,8 +5270,18 @@ int sde_encoder_display_failure_notification(struct drm_encoder *enc)
 	return 0;
 }
 
-void sde_encoder_trigger_early_wakeup(struct drm_encoder *drm_enc)
+/**
+ * sde_encoder_phys_setup_cdm - setup chroma down block
+ * @phys_enc:	Pointer to physical encoder
+ * @output_type: HDMI/WB
+ * @format:	Output format
+ * @roi: Output size
+ */
+void sde_encoder_phys_setup_cdm(struct sde_encoder_phys *phys_enc,
+		const struct sde_format *format, u32 output_type,
+		struct sde_rect *roi)
 {
+	struct drm_encoder *encoder = phys_enc->parent;
 	struct sde_encoder_virt *sde_enc = NULL;
 	struct sde_hw_cdm *hw_cdm = phys_enc->hw_cdm;
 	struct sde_hw_cdm_cfg *cdm_cfg = &phys_enc->cdm_cfg;
@@ -5293,14 +5303,6 @@ void sde_encoder_trigger_early_wakeup(struct drm_encoder *drm_enc)
 		if (hw_cdm && hw_cdm->ops.disable)
 			hw_cdm->ops.disable(hw_cdm);
 
-	priv = drm_enc->dev->dev_private;
-	sde_enc = to_sde_encoder_virt(drm_enc);
-	if (!sde_enc->crtc || (sde_enc->crtc->index
-			>= ARRAY_SIZE(priv->disp_thread))) {
-		SDE_DEBUG_ENC(sde_enc,
-			"invalid cached CRTC: %d or crtc index: %d\n",
-			sde_enc->crtc == NULL,
-			sde_enc->crtc ? sde_enc->crtc->index : -EINVAL);
 		return;
 	}
 
@@ -5392,8 +5394,14 @@ void sde_encoder_trigger_early_wakeup(struct drm_encoder *drm_enc)
 			return;
 		}
 	}
-	SDE_ATRACE_END("sde_encoder_resource_control");
 
+	if (hw_cdm && hw_cdm->ops.enable) {
+		ret = hw_cdm->ops.enable(hw_cdm, cdm_cfg);
+		if (ret < 0) {
+			SDE_ERROR("failed to enable CDM %d\n", ret);
+			return;
+		}
+	}
 }
 
 void sde_encoder_phys_destroy_cdm(struct sde_encoder_phys *phys_enc)

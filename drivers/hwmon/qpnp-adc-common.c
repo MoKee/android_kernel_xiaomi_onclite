@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +31,7 @@
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/qpnp/qpnp-adc.h>
+
 
 #define KELVINMIL_DEGMIL	273160
 #define QPNP_VADC_LDO_VOLTAGE_MIN	1800000
@@ -806,7 +809,6 @@ static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd_215[] = {
 	{558,	800}
 };
 
-/* Voltage to temperature */
 static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd[] = {
 	{1608,	-400},
 	{1551,	-350},
@@ -843,8 +845,8 @@ static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd[] = {
 	{35,	1200},
 	{31,	1250},
 };
-
 /* Voltage to temperature */
+
 static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd_30k[] = {
 	{1608,	-400},
 	{1551,	-350},
@@ -1399,15 +1401,29 @@ int32_t qpnp_adc_batt_therm_qrd(struct qpnp_vadc_chip *chip,
 							* 1000);
 		batt_thm_voltage = div64_s64(batt_thm_voltage,
 				adc_properties->full_scale_code * 1000);
+
 		if(!strcmp(Get_BatID(), "battery_30k")){
-		qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd,
-			ARRAY_SIZE(adcmap_batt_therm_qrd),
-			batt_thm_voltage, &adc_chan_result->physical);
+			qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd_30k,
+				ARRAY_SIZE(adcmap_batt_therm_qrd_30k),
+				batt_thm_voltage, &adc_chan_result->physical);
 		}else{
 			qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd_100k,
 				ARRAY_SIZE(adcmap_batt_therm_qrd_100k),
 				batt_thm_voltage, &adc_chan_result->physical);
-		}
+	        }
+	}else {
+
+		qpnp_adc_scale_with_calib_param(adc_code,
+			adc_properties, chan_properties, &batt_thm_voltage);
+
+		adc_chan_result->measurement = batt_thm_voltage;
+
+		return qpnp_adc_map_voltage_temp(
+				adcmap_batt_therm_qrd,
+				ARRAY_SIZE(adcmap_batt_therm_qrd),
+				batt_thm_voltage,
+				&adc_chan_result->physical);
+
 	}
 	return 0;
 }
@@ -1920,7 +1936,7 @@ int32_t qpnp_adc_scale_default(struct qpnp_vadc_chip *vadc,
 	} else {
 		qpnp_adc_scale_with_calib_param(adc_code, adc_properties,
 					chan_properties, &scale_voltage);
-		if (chan_properties->calib_type)
+		if (!(chan_properties->calib_type == CALIB_ABSOLUTE))
 			scale_voltage *= 1000;
 	}
 

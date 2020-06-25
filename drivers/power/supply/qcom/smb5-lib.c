@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
  * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1494,11 +1494,10 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		break;
 	}
 
-        if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
+	if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
 		val->intval = POWER_SUPPLY_STATUS_CHARGING;
 		return 0;
 	}
-
 	if (val->intval != POWER_SUPPLY_STATUS_CHARGING)
 		return 0;
 

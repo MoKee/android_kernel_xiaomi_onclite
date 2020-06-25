@@ -750,7 +750,7 @@ config MSM_AVTIMER
 
 config MSM_PM
 	depends on PM
-	select MSM_IDLE_STATS
+	select MSM_IDLE_STATS if DEBUG_FS
 	select CPU_IDLE_MULTIPLE_DRIVERS
 	bool "Qualcomm platform specific PM driver"
 	help
@@ -762,7 +762,7 @@ config MSM_PM
 
 config MSM_PM_LEGACY
 	depends on PM
-	select MSM_IDLE_STATS
+	select MSM_IDLE_STATS if DEBUG_FS
 	select CPU_IDLE_MULTIPLE_DRIVERS
 	bool "Qualcomm platform specific Legacy PM driver"
 	help
@@ -963,9 +963,3 @@ config BIG_CLUSTER_MIN_FREQ_ADJUST
 	  This driver is used to set the floor of the min frequency of big cluster
 	  to the user specified value when the cluster is not power collapsed. When
 	  the cluster is power collpsed it resets the value to physical limits.
-
-config STATE_NOTIFIER
-    bool "State Notifier"
-
-source "drivers/soc/qcom/memshare/Kconfig"
-
