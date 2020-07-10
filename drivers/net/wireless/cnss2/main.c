@@ -176,6 +176,7 @@ int cnss_request_bus_bandwidth(struct device *dev, int bandwidth)
 
 	switch (bandwidth) {
 	case CNSS_BUS_WIDTH_NONE:
+	case CNSS_BUS_WIDTH_IDLE:
 	case CNSS_BUS_WIDTH_LOW:
 	case CNSS_BUS_WIDTH_MEDIUM:
 	case CNSS_BUS_WIDTH_HIGH:
@@ -244,6 +245,9 @@ int cnss_wlan_enable(struct device *dev,
 	if (!plat_priv)
 		return -ENODEV;
 
+	if (!plat_priv)
+		return -ENODEV;
+
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
 		return 0;
 
@@ -278,6 +282,9 @@ EXPORT_SYMBOL(cnss_wlan_enable);
 int cnss_wlan_disable(struct device *dev, enum cnss_driver_mode mode)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
+	if (!plat_priv)
+		return -ENODEV;
+
 	if (!plat_priv)
 		return -ENODEV;
 
@@ -352,6 +359,9 @@ EXPORT_SYMBOL(cnss_athdiag_write);
 int cnss_set_fw_log_mode(struct device *dev, u8 fw_log_mode)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
+	if (!plat_priv)
+		return -ENODEV;
+
 	if (!plat_priv)
 		return -ENODEV;
 
