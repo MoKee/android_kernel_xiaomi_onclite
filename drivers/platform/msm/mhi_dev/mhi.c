@@ -2348,20 +2348,6 @@ int mhi_dev_close_channel(struct mhi_dev_client *handle)
 	if (!handle) {
 		mhi_log(MHI_MSG_ERROR, "Invalid channel access:%d\n", -ENODEV);
 		return -EINVAL;
-
-	return ch->pend_wr_count ? true : false;
-}
-EXPORT_SYMBOL(mhi_dev_channel_has_pending_write);
-
-int mhi_dev_close_channel(struct mhi_dev_client *handle)
-{
-	struct mhi_dev_channel *ch;
-	int count = 0;
-	int rc = 0;
-
-	if (!handle) {
-		mhi_log(MHI_MSG_ERROR, "Invalid channel access:%d\n", -ENODEV);
-		return -EINVAL;
 	}
 	ch = handle->channel;
 

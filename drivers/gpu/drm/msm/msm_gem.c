@@ -142,8 +142,7 @@ static struct page **get_pages(struct drm_gem_object *obj)
 		 * so we don't get ourselves into trouble with a dirty cache
 		 */
 		if (msm_obj->flags & (MSM_BO_WC|MSM_BO_UNCACHED))
-			dma_sync_sg_for_device(dev->dev, msm_obj->sgt->sgl,
-				msm_obj->sgt->nents, DMA_BIDIRECTIONAL);
+			sync_for_device(msm_obj);
 	}
 
 	return msm_obj->pages;
