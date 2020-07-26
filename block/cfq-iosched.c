@@ -657,8 +657,7 @@ static inline void cfqg_put(struct cfq_group *cfqg)
 
 #define cfq_log_cfqq(cfqd, cfqq, fmt, args...)	do {			\
 	char __pbuf[128];						\
-	if (likely(!blk_trace_note_message_enabled((bfqd)->queue)))	\
-		break;							\
+									\
 	blkg_path(cfqg_to_blkg((cfqq)->cfqg), __pbuf, sizeof(__pbuf));	\
 	blk_add_trace_msg((cfqd)->queue, "cfq%d%c%c %s " fmt, (cfqq)->pid, \
 			cfq_cfqq_sync((cfqq)) ? 'S' : 'A',		\
@@ -668,8 +667,7 @@ static inline void cfqg_put(struct cfq_group *cfqg)
 
 #define cfq_log_cfqg(cfqd, cfqg, fmt, args...)	do {			\
 	char __pbuf[128];						\
-        if (likely(!blk_trace_note_message_enabled((bfqd)->queue)))     \
-                break;                                                  \
+									\
 	blkg_path(cfqg_to_blkg(cfqg), __pbuf, sizeof(__pbuf));		\
 	blk_add_trace_msg((cfqd)->queue, "%s " fmt, __pbuf, ##args);	\
 } while (0)
@@ -4746,7 +4744,7 @@ static int cfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	cfqd->cfq_slice[1] = cfq_slice_sync;
 	cfqd->cfq_target_latency = cfq_target_latency;
 	cfqd->cfq_slice_async_rq = cfq_slice_async_rq;
-	cfqd->cfq_slice_idle = blk_queue_nonrot(q) ? 0 : cfq_slice_idle;
+	cfqd->cfq_slice_idle = cfq_slice_idle;
 	cfqd->cfq_group_idle = cfq_group_idle;
 	cfqd->cfq_latency = 1;
 	cfqd->hw_tag = -1;
