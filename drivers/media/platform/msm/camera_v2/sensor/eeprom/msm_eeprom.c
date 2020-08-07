@@ -1,5 +1,5 @@
 /* Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -57,10 +57,8 @@ static int msm_get_read_mem_size
 			return -EINVAL;
 		}
 		for (i = 0; i < eeprom_map->memory_map_size; i++) {
-			if ((eeprom_map->mem_settings[i].i2c_operation ==
-				MSM_CAM_READ) ||
-				(eeprom_map->mem_settings[i].i2c_operation ==
-				MSM_CAM_READ_LOOP)) {
+			if (eeprom_map->mem_settings[i].i2c_operation ==
+				MSM_CAM_READ) {
 				size += eeprom_map->mem_settings[i].reg_data;
 			}
 		}
@@ -444,10 +442,8 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 			break;
 
 			default:
-				pr_err("%s: %d Invalid i2c operation LC:%d, op: %d\n",
-					__func__, __LINE__, i,
-					eeprom_map->mem_settings[i].
-						i2c_operation);
+				pr_err("%s: %d Invalid i2c operation LC:%d\n",
+					__func__, __LINE__, i);
 				return -EINVAL;
 			}
 		}
@@ -740,7 +736,7 @@ static int msm_eeprom_get_subdev_id(struct msm_eeprom_ctrl_t *e_ctrl,
 
 static camera_vendor_module_id onc_ov02a10_ofilm_i_get_otp_vendor_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
 {
-	uint16_t MID_FLAG_OFFSET = 0x0000;
+	uint16_t MID_FLAG_OFFSET = 0x0000;//0x01 valid
 	uint16_t MODULE_INFO_OFFSET = 0x0001;//ofilm 0x07 valid
 	uint8_t flag=0;
 	uint8_t mid=0;
@@ -759,7 +755,7 @@ static camera_vendor_module_id onc_ov02a10_ofilm_i_get_otp_vendor_module_id(stru
 
 static camera_vendor_module_id onc_ov02a10_sunny_ii_get_otp_vendor_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
 {
-	uint16_t MID_FLAG_OFFSET = 0x0000;
+	uint16_t MID_FLAG_OFFSET = 0x0000;//0x01 valid
 	uint16_t MODULE_INFO_OFFSET = 0x0001;//sunny 0x01 valid
 	uint8_t flag=0;
 	uint8_t mid=0;

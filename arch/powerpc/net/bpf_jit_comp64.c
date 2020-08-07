@@ -21,6 +21,8 @@
 
 #include "bpf_jit64.h"
 
+int bpf_jit_enable __read_mostly;
+
 static void bpf_jit_fill_ill_insns(void *area, unsigned int size)
 {
 	int *p = area;
@@ -930,7 +932,7 @@ common_load:
 		/*
 		 * Tail call
 		 */
-		case BPF_JMP | BPF_TAIL_CALL:
+		case BPF_JMP | BPF_CALL | BPF_X:
 			ctx->seen |= SEEN_TAILCALL;
 			bpf_jit_emit_tail_call(image, ctx, addrs[i + 1]);
 			break;

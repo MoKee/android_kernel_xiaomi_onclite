@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -59,13 +59,14 @@ fail_read:
 	return 0;
 }
 
-static bool is_compatible(char *compat)
+inline bool is_compatible(char *compat)
 {
 	return !!of_find_compatible_node(NULL, NULL, compat);
 }
 
-static inline enum imem_type read_imem_type(struct platform_device *pdev)
+inline enum imem_type read_imem_type(struct platform_device *pdev)
 {
+
 	return is_compatible("qcom,msm-ocmem") ? IMEM_OCMEM :
 		is_compatible("qcom,msm-vmem") ? IMEM_VMEM :
 						IMEM_NONE;
@@ -625,7 +626,7 @@ error:
 }
 
 /* A comparator to compare loads (needed later on) */
-static int cmp(const void *a, const void *b)
+int cmp_load_freq_table(const void *a, const void *b)
 {
 	/* want to sort in reverse so flip the comparison */
 	return ((struct load_freq_table *)b)->load -
@@ -678,7 +679,7 @@ static int msm_vidc_load_freq_table(struct msm_vidc_platform_resources *res)
 	 * logic to work, just sort it ourselves
 	 */
 	sort(res->load_freq_tbl, res->load_freq_tbl_size,
-			sizeof(*res->load_freq_tbl), cmp, NULL);
+			sizeof(*res->load_freq_tbl), cmp_load_freq_table, NULL);
 	return rc;
 }
 

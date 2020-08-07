@@ -2,7 +2,7 @@
  * gadget.c - DesignWare USB3 DRD Controller Gadget Framework Link
  *
  * Copyright (C) 2010-2011 Texas Instruments Incorporated - http://www.ti.com
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * Authors: Felipe Balbi <balbi@ti.com>,
  *	    Sebastian Andrzej Siewior <bigeasy@linutronix.de>
@@ -153,28 +153,27 @@ int dwc3_gadget_set_link_state(struct dwc3 *dwc, enum dwc3_link_state state)
 
 /**
  * dwc3_ep_inc_trb() - Increment a TRB index.
- * @dep - DWC3 endpoint
  * @index - Pointer to the TRB index to increment.
  *
  * The index should never point to the link TRB. After incrementing,
  * if it is point to the link TRB, wrap around to the beginning. The
  * link TRB is always at the last TRB entry.
  */
-static void dwc3_ep_inc_trb(struct dwc3_ep *dep, u8 *index)
+static void dwc3_ep_inc_trb(u8 *index)
 {
 	(*index)++;
-	if (*index == (dep->num_trbs - 1))
+	if (*index == (DWC3_TRB_NUM - 1))
 		*index = 0;
 }
 
 void dwc3_ep_inc_enq(struct dwc3_ep *dep)
 {
-	dwc3_ep_inc_trb(dep, &dep->trb_enqueue);
+	dwc3_ep_inc_trb(&dep->trb_enqueue);
 }
 
 void dwc3_ep_inc_deq(struct dwc3_ep *dep)
 {
-	dwc3_ep_inc_trb(dep, &dep->trb_dequeue);
+	dwc3_ep_inc_trb(&dep->trb_dequeue);
 }
 
 /*
@@ -904,6 +903,7 @@ static struct usb_request *dwc3_gadget_ep_alloc_request(struct usb_ep *ep,
 
 	req->epnum	= dep->number;
 	req->dep	= dep;
+	req->request.dma = DMA_ERROR_CODE;
 
 	dep->allocated_requests++;
 
@@ -2754,15 +2754,17 @@ static void dwc3_gsi_ep_transfer_complete(struct dwc3 *dwc, struct dwc3_ep *dep)
 	struct dwc3_trb *trb;
 	dma_addr_t offset;
 
-	/*
-	 * Doorbell needs to be rung with the next TRB that is going to be
-	 * processed by hardware.
-	 * So, if 'n'th TRB got completed then ring doorbell with (n+1) TRB.
-	 */
-	dwc3_ep_inc_trb(dep, &dep->trb_dequeue);
 	trb = &dep->trb_pool[dep->trb_dequeue];
-	offset = dwc3_trb_dma_offset(dep, trb);
-	usb_gsi_ep_op(ep, (void *)&offset, GSI_EP_OP_UPDATE_DB);
+	while (trb->ctrl & DWC3_TRBCTL_LINK_TRB) {
+		dwc3_ep_inc_trb(&dep->trb_dequeue);
+		trb = &dep->trb_pool[dep->trb_dequeue];
+	}
+
+	if (!(trb->ctrl & DWC3_TRB_CTRL_HWO)) {
+		offset = dwc3_trb_dma_offset(dep, trb);
+		usb_gsi_ep_op(ep, (void *)&offset, GSI_EP_OP_UPDATE_DB);
+		dwc3_ep_inc_trb(&dep->trb_dequeue);
+	}
 }
 
 static void dwc3_endpoint_transfer_complete(struct dwc3 *dwc,
@@ -3061,9 +3063,11 @@ static void dwc3_stop_active_transfers(struct dwc3 *dwc)
 		if (!(dep->flags & DWC3_EP_ENABLED))
 			continue;
 
+		if (dep->endpoint.ep_type == EP_TYPE_GSI && dep->direction)
+			dwc3_notify_event(dwc,
+					DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
 		dwc3_remove_requests(dwc, dep);
 	}
-	dwc3_notify_event(dwc, DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
 	dbg_log_string("DONE");
 }
 
@@ -3938,6 +3942,7 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 	dwc->gadget.speed		= USB_SPEED_UNKNOWN;
 	dwc->gadget.sg_supported	= true;
 	dwc->gadget.name		= "dwc3-gadget";
+	dwc->gadget.is_otg		= dwc->dr_mode == USB_DR_MODE_OTG;
 	dwc->gadget.l1_supported	= !dwc->usb2_l1_disable;
 
 	/*

@@ -5365,9 +5365,7 @@ static int iris_vidioc_querycap(struct file *file, void *priv,
 	strlcpy(radio->g_cap.card, DRIVER_CARD, sizeof(radio->g_cap.card));
 
 	radio->g_cap.capabilities = V4L2_CAP_TUNER | V4L2_CAP_RADIO;
-	capability->device_caps = V4L2_CAP_TUNER | V4L2_CAP_RADIO;
-	capability->capabilities = capability->device_caps |
-					V4L2_CAP_DEVICE_CAPS;
+	capability->capabilities = radio->g_cap.capabilities;
 	return 0;
 }
 
@@ -5526,7 +5524,6 @@ static int iris_probe(struct platform_device *pdev)
 	  sizeof(iris_viddev_template));
 	strlcpy(radio->v4l2_dev.name, DRIVER_NAME,
 			sizeof(radio->v4l2_dev.name));
-	radio->videodev->device_caps = V4L2_CAP_TUNER | V4L2_CAP_RADIO;
 	retval = v4l2_device_register(NULL, &radio->v4l2_dev);
 	if (retval)
 		return -EINVAL;

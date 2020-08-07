@@ -4,6 +4,7 @@
  * Written by Stephen C. Tweedie <sct@redhat.com>, 1998
  *
  * Copyright 1998 Red Hat corp --- All Rights Reserved
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
@@ -727,6 +728,23 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid)
 	if (unlikely(is_journal_aborted(journal)))
 		err = -EIO;
 	return err;
+}
+
+int jbd2_transaction_need_wait(journal_t *journal, tid_t tid)
+{
+	int need_to_wait = 1;
+	read_lock(&journal->j_state_lock);
+	if (journal->j_running_transaction &&
+	journal->j_running_transaction->t_tid == tid) {
+		if (journal->j_commit_request != tid) {
+			/* transaction not yet started, so request it */
+			need_to_wait = 1;
+		}
+	} else if (!(journal->j_committing_transaction &&
+		journal->j_committing_transaction->t_tid == tid))
+			need_to_wait = 0;
+	read_unlock(&journal->j_state_lock);
+	return need_to_wait;
 }
 
 /*
@@ -1670,11 +1688,6 @@ int jbd2_journal_load(journal_t *journal)
 		       journal->j_devname);
 		return -EFSCORRUPTED;
 	}
-	/*
-	 * clear JBD2_ABORT flag initialized in journal_init_common
-	 * here to update log tail information with the newest seq.
-	 */
-	journal->j_flags &= ~JBD2_ABORT;
 
 	/* OK, we've finished with the dynamic journal bits:
 	 * reinitialise the dynamic contents of the superblock in memory
@@ -1682,6 +1695,7 @@ int jbd2_journal_load(journal_t *journal)
 	if (journal_reset(journal))
 		goto recovery_error;
 
+	journal->j_flags &= ~JBD2_ABORT;
 	journal->j_flags |= JBD2_LOADED;
 	return 0;
 
@@ -2100,10 +2114,12 @@ static void __journal_abort_soft (journal_t *journal, int errno)
 
 	__jbd2_journal_abort_hard(journal);
 
-	jbd2_journal_update_sb_errno(journal);
-	write_lock(&journal->j_state_lock);
-	journal->j_flags |= JBD2_REC_ERR;
-	write_unlock(&journal->j_state_lock);
+	if (errno) {
+		jbd2_journal_update_sb_errno(journal);
+		write_lock(&journal->j_state_lock);
+		journal->j_flags |= JBD2_REC_ERR;
+		write_unlock(&journal->j_state_lock);
+	}
 }
 
 /**
@@ -2144,6 +2160,11 @@ static void __journal_abort_soft (journal_t *journal, int errno)
  * transaction without having to complete the transaction to record the
  * failure to disk.  ext3_error, for example, now uses this
  * functionality.
+ *
+ * Errors which originate from within the journaling layer will NOT
+ * supply an errno; a null errno implies that absolutely no further
+ * writes are done to the journal (unless there are any already in
+ * progress).
  *
  */
 
@@ -2552,6 +2573,10 @@ void jbd2_journal_init_jbd_inode(struct jbd2_inode *jinode, struct inode *inode)
 	jinode->i_next_transaction = NULL;
 	jinode->i_vfs_inode = inode;
 	jinode->i_flags = 0;
+	jinode->i_dirty_start = 0;
+	jinode->i_dirty_end = 0;
+	jinode->i_next_dirty_start = 0;
+	jinode->i_next_dirty_end = 0;
 	INIT_LIST_HEAD(&jinode->i_list);
 }
 

@@ -15,6 +15,8 @@
 #include <asm/nospec-branch.h>
 #include <linux/bpf.h>
 
+int bpf_jit_enable __read_mostly;
+
 /*
  * assembly code in arch/x86/net/bpf_jit.S
  */
@@ -148,19 +150,6 @@ static bool is_ereg(u32 reg)
 			     BIT(BPF_REG_8) |
 			     BIT(BPF_REG_9) |
 			     BIT(BPF_REG_AX));
-}
-
-/*
- * is_ereg_8l() == true if BPF register 'reg' is mapped to access x86-64
- * lower 8-bit registers dil,sil,bpl,spl,r8b..r15b, which need extra byte
- * of encoding. al,cl,dl,bl have simpler encoding.
- */
-static bool is_ereg_8l(u32 reg)
-{
-	return is_ereg(reg) ||
-	    (1 << reg) & (BIT(BPF_REG_1) |
-			  BIT(BPF_REG_2) |
-			  BIT(BPF_REG_FP));
 }
 
 /* add modifiers if 'reg' maps to x64 registers r8..r15 */
@@ -501,6 +490,13 @@ static int do_jit(struct bpf_prog *bpf_prog, int *addrs, u8 *image,
 			break;
 
 		case BPF_LD | BPF_IMM | BPF_DW:
+			if (insn[1].code != 0 || insn[1].src_reg != 0 ||
+			    insn[1].dst_reg != 0 || insn[1].off != 0) {
+				/* verifier must catch invalid insns */
+				pr_err("invalid BPF_LD_IMM64 insn\n");
+				return -EINVAL;
+			}
+
 			/* optimization: if imm64 is zero, use 'xor <dst>,<dst>'
 			 * to save 7 bytes.
 			 */
@@ -777,8 +773,9 @@ st:			if (is_imm8(insn->off))
 			/* STX: *(u8*)(dst_reg + off) = src_reg */
 		case BPF_STX | BPF_MEM | BPF_B:
 			/* emit 'mov byte ptr [rax + off], al' */
-			if (is_ereg(dst_reg) || is_ereg_8l(src_reg))
-				/* Add extra byte for eregs or SIL,DIL,BPL in src_reg */
+			if (is_ereg(dst_reg) || is_ereg(src_reg) ||
+			    /* have to add extra byte for x86 SIL, DIL regs */
+			    src_reg == BPF_REG_1 || src_reg == BPF_REG_2)
 				EMIT2(add_2mod(0x40, dst_reg, src_reg), 0x88);
 			else
 				EMIT1(0x88);
@@ -886,7 +883,7 @@ xadd:			if (is_imm8(insn->off))
 			}
 			break;
 
-		case BPF_JMP | BPF_TAIL_CALL:
+		case BPF_JMP | BPF_CALL | BPF_X:
 			emit_bpf_tail_call(&prog);
 			break;
 
