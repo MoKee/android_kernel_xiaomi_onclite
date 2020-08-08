@@ -5072,8 +5072,7 @@ static inline int btrfs_chunk_max_errors(struct map_lookup *map)
 
 	if (map->type & (BTRFS_BLOCK_GROUP_RAID1 |
 			 BTRFS_BLOCK_GROUP_RAID10 |
-			 BTRFS_BLOCK_GROUP_RAID5 |
-			 BTRFS_BLOCK_GROUP_DUP)) {
+			 BTRFS_BLOCK_GROUP_RAID5)) {
 		max_errors = 1;
 	} else if (map->type & BTRFS_BLOCK_GROUP_RAID6) {
 		max_errors = 2;
@@ -6854,6 +6853,14 @@ int btrfs_read_chunk_tree(struct btrfs_root *root)
 
 	mutex_lock(&uuid_mutex);
 	lock_chunks(root);
+
+	/*
+	 * It is possible for mount and umount to race in such a way that
+	 * we execute this code path, but open_fs_devices failed to clear
+	 * total_rw_bytes. We certainly want it cleared before reading the
+	 * device items, so clear it here.
+	 */
+	root->fs_info->fs_devices->total_rw_bytes = 0;
 
 	/*
 	 * Read all device items, and then all the chunk items. All
