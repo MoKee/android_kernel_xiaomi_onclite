@@ -37,8 +37,8 @@ CONFIG_PRIMA_WLAN_11AC_HIGH_TP := y
 # Flag to enable mDNS feature
 CONFIG_MDNS_OFFLOAD_SUPPORT := y
 
-#Flag to enable TDLS feature
-    CONFIG_QCOM_TDLS := y
+# Flag to enable TDLS feature
+CONFIG_QCOM_TDLS := y
 
 # Flag to enable Fast Transition (11r) feature
 CONFIG_QCOM_VOWIFI_11R := y

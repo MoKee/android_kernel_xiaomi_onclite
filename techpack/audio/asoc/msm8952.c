@@ -1,4 +1,5 @@
-/* Copyright (c) 2015-2016, 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, 2018, 2020, The Linux Foundation.
+ * All rights reserved.
  * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -178,7 +179,7 @@ static const char *const ext_drcv_amp_function[] = { "Off", "On" };
 static int ext_kspk_amp_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	ucontrol->value.integer.value[0] = aw87329_kspk_control;
-	pr_debug("%s: aw87329_kspk_control = %d\n", __func__,
+	pr_err("%s: aw87329_kspk_control = %d\n", __func__,
 	aw87329_kspk_control);
 	return 0;
 }
@@ -187,14 +188,14 @@ static int ext_kspk_amp_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_v
 	if(ucontrol->value.integer.value[0] == aw87329_kspk_control)
 		return 1;
 	aw87329_kspk_control = ucontrol->value.integer.value[0];
-	pr_debug("%s: ext_kspk_amp_put = %d\n", __func__,
+	pr_err("%s: ext_kspk_amp_put = %d\n", __func__,
 	aw87329_kspk_control);
 	if(ucontrol->value.integer.value[0]) {
 		aw87329_audio_kspk();
 	} else {
 		aw87329_audio_off();
 	}
-	pr_debug("%s: value.integer.value = %ld\n", __func__,
+	pr_err("%s: value.integer.value = %ld\n", __func__,
 	ucontrol->value.integer.value[0]);
 	return 0;
 }
@@ -376,7 +377,7 @@ int is_ext_spk_gpio_support(struct platform_device *pdev,
 				spk_ext_pa, 0);
 
 	if (pdata->spk_ext_pa_gpio < 0) {
-		dev_dbg(&pdev->dev,
+		dev_err(&pdev->dev,
 			"%s: missing %s in dt node\n", __func__, spk_ext_pa);
 	} else {
 		if (!gpio_is_valid(pdata->spk_ext_pa_gpio)) {
@@ -469,7 +470,7 @@ int is_us_eu_switch_gpio_support(struct platform_device *pdev,
 	pdata->us_euro_gpio = of_get_named_gpio(pdev->dev.of_node,
 					"qcom,cdc-us-euro-gpios", 0);
 	if (pdata->us_euro_gpio < 0) {
-		dev_dbg(&pdev->dev,
+		dev_err(&pdev->dev,
 			"property %s in node %s not found %d\n",
 			"qcom,cdc-us-euro-gpios", pdev->dev.of_node->full_name,
 			pdata->us_euro_gpio);
@@ -2188,12 +2189,13 @@ static struct snd_soc_dai_link msm8952_dai[] = {
 		.ignore_pmdown_time = 1,
 	},
 	{/* hw:x,27 */
-		.name = "MSM8X16 Compress3",
-		.stream_name = "Compress3",
+		.name = "MSM8X16 MultiMedia10",
+		.stream_name = "MultiMedia10",
 		.cpu_dai_name	= "MultiMedia10",
 		.platform_name  = "msm-pcm-dsp.1",
 		.dynamic = 1,
 		.dpcm_playback = 1,
+		.dpcm_capture = 1,
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 			 SND_SOC_DPCM_TRIGGER_POST},
 		.codec_dai_name = "snd-soc-dummy-dai",
@@ -2413,6 +2415,24 @@ static struct snd_soc_dai_link msm8952_dai[] = {
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
 		.id = MSM_FRONTEND_DAI_MULTIMEDIA19,
+	},
+	{/* hw:x,41 */
+		.name = "MSM8x16 Haptic Audio",
+		.stream_name = "MultiMedia30",
+		.cpu_dai_name   = "MultiMedia30",
+		.platform_name  = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE |
+			 ASYNC_DPCM_SND_SOC_HW_PARAMS,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			 SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.id = MSM_FRONTEND_DAI_MULTIMEDIA30,
 	},
 	/* Backend I2S DAI Links */
 	{
@@ -3035,17 +3055,19 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 	const char *ext_pa = "qcom,msm-ext-pa";
 	const char *mclk = "qcom,msm-mclk-freq";
 	const char *wsa = "asoc-wsa-codec-names";
-	const char *wsa_prefix = "asoc-wsa-codec-prefixes";
 	const char *type = NULL;
 	const char *ext_pa_str = NULL;
-	const char *wsa_str = NULL;
-	const char *wsa_prefix_str = NULL;
 	const char *spk_ext_pa = "qcom,msm-spk-ext-pa";
 	int num_strings;
 	int id, i, val;
 	int ret = 0;
 	struct resource *muxsel;
+#if IS_ENABLED(CONFIG_SND_SOC_WSA881X_ANALOG)
+	const char *wsa_prefix = "asoc-wsa-codec-prefixes";
+	const char *wsa_str = NULL;
+	const char *wsa_prefix_str = NULL;
 	char *temp_str = NULL;
+#endif
 
 	pdata = devm_kzalloc(&pdev->dev,
 				sizeof(struct msm_asoc_mach_data),
@@ -3127,6 +3149,7 @@ parse_mclk_freq:
 	/*reading the gpio configurations from dtsi file*/
 	num_strings = of_property_count_strings(pdev->dev.of_node,
 			wsa);
+#if IS_ENABLED(CONFIG_SND_SOC_WSA881X_ANALOG)
 	if (num_strings > 0) {
 		if (wsa881x_get_probing_count() < 2) {
 			ret = -EPROBE_DEFER;
@@ -3142,7 +3165,7 @@ parse_mclk_freq:
 						pdev->dev.of_node, wsa,
 						i, &wsa_str);
 				if (ret) {
-					dev_dbg(&pdev->dev,
+					dev_err(&pdev->dev,
 						"%s:of read string %s i %d error %d\n",
 						__func__, wsa, i, ret);
 					goto err;
@@ -3167,7 +3190,7 @@ parse_mclk_freq:
 						pdev->dev.of_node, wsa_prefix,
 						i, &wsa_prefix_str);
 				if (ret) {
-					dev_dbg(&pdev->dev,
+					dev_err(&pdev->dev,
 						"%s:of read string %s i %d error %d\n",
 						__func__, wsa_prefix, i, ret);
 					goto err;
@@ -3192,6 +3215,7 @@ parse_mclk_freq:
 			msm_anlg_cdc_update_int_spk_boost(false);
 		}
 	}
+#endif
 
 	card = msm8952_populate_sndcard_dailinks(&pdev->dev);
 	dev_dbg(&pdev->dev, "default codec configured\n");
@@ -3207,11 +3231,11 @@ parse_mclk_freq:
 		ret = of_property_read_string_index(pdev->dev.of_node,
 				ext_pa, i, &ext_pa_str);
 		if (ret) {
-			dev_dbg(&pdev->dev, "%s:of read string %s i %d error %d\n",
+			dev_err(&pdev->dev, "%s:of read string %s i %d error %d\n",
 					__func__, ext_pa, i, ret);
 			goto err;
 		}
-		dev_dbg(&pdev->dev, "%s:of read string %s i %d ret %d\n",
+		dev_err(&pdev->dev, "%s:of read string %s i %d ret %d\n",
 					__func__, ext_pa, i, ret);
 		if (!strcmp(ext_pa_str, "primary"))
 			pdata->ext_pa = (pdata->ext_pa | PRI_MI2S_ID);
@@ -3228,7 +3252,7 @@ parse_mclk_freq:
 	pdata->spk_ext_pa_gpio = of_get_named_gpio(pdev->dev.of_node,
 							spk_ext_pa, 0);
 	if (pdata->spk_ext_pa_gpio < 0) {
-		dev_dbg(&pdev->dev, "%s: missing %s in dt node\n",
+		dev_err(&pdev->dev, "%s: missing %s in dt node\n",
 			__func__, spk_ext_pa);
 	}
 
@@ -3269,7 +3293,7 @@ parse_mclk_freq:
 		goto err;
 	}
 	if (!strcmp(type, "external")) {
-		dev_dbg(&pdev->dev, "Headset is using external micbias\n");
+		dev_err(&pdev->dev, "Headset is using external micbias\n");
 		mbhc_cfg.hs_ext_micbias = true;
 	} else {
 		dev_err(&pdev->dev, "Headset is using internal micbias\n");
@@ -3337,7 +3361,7 @@ parse_mclk_freq:
 
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret) {
-		dev_dbg(&pdev->dev, "snd_soc_register_card failed (%d)\n",
+		dev_err(&pdev->dev, "snd_soc_register_card failed (%d)\n",
 			ret);
 		goto err;
 	}

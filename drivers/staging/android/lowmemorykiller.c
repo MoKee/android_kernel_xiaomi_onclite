@@ -832,7 +832,10 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		put_task_struct(selected);
 	}
 
-	return rem;
+	if (rem == 0)
+		return SHRINK_STOP;
+	else
+		return rem;
 }
 
 static struct shrinker lowmem_shrinker = {

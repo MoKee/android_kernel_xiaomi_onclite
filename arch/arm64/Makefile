@@ -56,9 +56,6 @@ ifeq ($(cc-name),clang)
 KBUILD_CFLAGS	+= -mno-implicit-float
 else
 KBUILD_CFLAGS	+= -mgeneral-regs-only
-ifeq ($(CONFIG_ARCH_MSM8953), y)
-KBUILD_CFLAGS	+= -mcpu=cortex-a73.cortex-a53
-endif
 endif
 KBUILD_CFLAGS	+= $(lseinstr)
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
@@ -77,13 +74,6 @@ AS		+= -EL
 LD		+= -EL
 UTS_MACHINE	:= aarch64
 endif
-
-# msm8953 optimizations
-arch-$(CONFIG_ARCH_MSM8953)	:= $(call cc-option,-mcpu=cortex-a53+crc+crypto,-march=armv8-a+crc+crypto)
-tune-$(CONFIG_ARCH_MSM8953)	:= -mtune=cortex-a53
-
-KBUILD_CFLAGS	+= $(arch-y) $(tune-y)
-KBUILD_AFLAGS	+= $(arch-y) $(tune-y)
 
 CHECKFLAGS	+= -D__aarch64__
 
