@@ -8,7 +8,7 @@
 KERNEL_DIR=$PWD
 KERN_IMG=$KERNEL_DIR/out/arch/arm64/boot/Image.gz-dtb
 ZIP_DIR=$KERNEL_DIR/AnyKernel3
-CONFIG=msm8953-perf_defconfig
+CONFIG=onc-perf_defconfig
 CROSS_COMPILE="aarch64-linux-android-"
 CROSS_COMPILE_ARM32="arm-linux-androideabi-"
 PATH=:"${KERNEL_DIR}/clang/proton/bin:${PATH}:${KERNEL_DIR}/stock/bin:${PATH}:${KERNEL_DIR}/stock_32/bin:${PATH}"
