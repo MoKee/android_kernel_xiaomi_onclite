@@ -403,6 +403,8 @@ KBUILD_CPPFLAGS := -D__KERNEL__
 
 # Flags to tune generated code for Cortex-A53 CPU
 KBUILD_CFLAGS += -march=armv8-a -mtune=cortex-a53
+KBUILD_CFLAGS += -march=armv8-a -mtune=cortex-a73
+KBUILD_CFLAGS += -march=armv8-a -mtune=kryo
 
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
@@ -538,6 +540,7 @@ KBUILD_CFLAGS += $(call cc-disable-warning, duplicate-decl-specifier)
 KBUILD_CFLAGS += $(call cc-option, -Wno-undefined-optimized)
 KBUILD_CFLAGS += $(call cc-option, -Wno-tautological-constant-out-of-range-compare)
 KBUILD_CFLAGS += $(call cc-option, -Wno-sometimes-uninitialized)
+KBUILD_CFLAGS += $(call cc-option, -Wstring-concatenation)
 KBUILD_CFLAGS += -Wno-asm-operand-widths
 KBUILD_CFLAGS += -Wno-initializer-overrides
 KBUILD_CFLAGS += -fno-builtin
