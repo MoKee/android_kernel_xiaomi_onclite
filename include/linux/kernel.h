@@ -11,7 +11,6 @@
 #include <linux/log2.h>
 #include <linux/typecheck.h>
 #include <linux/printk.h>
-#include <linux/build_bug.h>
 #include <asm/byteorder.h>
 #include <uapi/linux/kernel.h>
 
@@ -54,10 +53,12 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
 
-#define u64_to_user_ptr(x) ({		\
+#define u64_to_user_ptr(x) (		\
+{					\
 	typecheck(u64, (x));		\
 	(void __user *)(uintptr_t)(x);	\
-})
+}					\
+)
 
 /*
  * This looks more complex than it should be. But we need to
@@ -81,48 +82,58 @@
 #endif
 
 /* The `const' in roundup() prevents gcc-3.3 from calling __divdi3 */
-#define roundup(x, y) ({				\
+#define roundup(x, y) (					\
+{							\
 	const typeof(y) __y = y;			\
 	(((x) + (__y - 1)) / __y) * __y;		\
-})
-#define rounddown(x, y) ({				\
+}							\
+)
+#define rounddown(x, y) (				\
+{							\
 	typeof(x) __x = (x);				\
 	__x - (__x % (y));				\
-})
+}							\
+)
 
 /*
  * Divide positive or negative dividend by positive divisor and round
  * to closest integer. Result is undefined for negative divisors and
  * for negative dividends if the divisor variable type is unsigned.
  */
-#define DIV_ROUND_CLOSEST(x, divisor)({			\
+#define DIV_ROUND_CLOSEST(x, divisor)(			\
+{							\
 	typeof(x) __x = x;				\
 	typeof(divisor) __d = divisor;			\
 	(((typeof(x))-1) > 0 ||				\
 	 ((typeof(divisor))-1) > 0 || (__x) > 0) ?	\
 		(((__x) + ((__d) / 2)) / (__d)) :	\
 		(((__x) - ((__d) / 2)) / (__d));	\
-})
+}							\
+)
 /*
  * Same as above but for u64 dividends. divisor must be a 32-bit
  * number.
  */
-#define DIV_ROUND_CLOSEST_ULL(x, divisor)({		\
+#define DIV_ROUND_CLOSEST_ULL(x, divisor)(		\
+{							\
 	typeof(divisor) __d = divisor;			\
 	unsigned long long _tmp = (x) + (__d) / 2;	\
 	do_div(_tmp, __d);				\
 	_tmp;						\
-})
+}							\
+)
 
 /*
  * Multiplies an integer by a fraction, while avoiding unnecessary
  * overflow or loss of precision.
  */
-#define mult_frac(x, numer, denom)({			\
+#define mult_frac(x, numer, denom)(			\
+{							\
 	typeof(x) quot = (x) / (denom);			\
 	typeof(x) rem  = (x) % (denom);			\
 	(quot * (numer)) + ((rem * (numer)) / (denom));	\
-})
+}							\
+)
 
 
 #define _RET_IP_		(unsigned long)__builtin_return_address(0)
@@ -132,12 +143,14 @@
 # include <asm/div64.h>
 # define sector_div(a, b) do_div(a, b)
 #else
-# define sector_div(n, b)({ \
+# define sector_div(n, b)( \
+{ \
 	int _res; \
 	_res = (n) % (b); \
 	(n) /= (b); \
 	_res; \
-})
+} \
+)
 #endif
 
 /**
@@ -599,9 +612,6 @@ do {									\
  * let gcc optimize the rest.
  */
 
-#ifdef CONFIG_DISABLE_TRACE_PRINTK
-#define trace_printk pr_debug
-#else
 #define trace_printk(fmt, ...)				\
 do {							\
 	char _______STR[] = __stringify((__VA_ARGS__));	\
@@ -624,7 +634,6 @@ do {									\
 	else								\
 		__trace_printk(_THIS_IP_, fmt, ##args);			\
 } while (0)
-#endif
 
 extern __printf(2, 3)
 int __trace_bprintk(unsigned long ip, const char *fmt, ...);
@@ -824,12 +833,9 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
  * @member:	the name of the member within the struct.
  *
  */
-#define container_of(ptr, type, member) ({				\
-	void *__mptr = (void *)(ptr);					\
-	BUILD_BUG_ON_MSG(!__same_type(*(ptr), ((type *)0)->member) &&	\
-			 !__same_type(*(ptr), void),			\
-			 "pointer type mismatch in container_of()");	\
-	((type *)(__mptr - offsetof(type, member))); })
+#define container_of(ptr, type, member) ({			\
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
+	(type *)( (char *)__mptr - offsetof(type,member) );})
 
 /* Rebuild everything on CONFIG_FTRACE_MCOUNT_RECORD */
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
