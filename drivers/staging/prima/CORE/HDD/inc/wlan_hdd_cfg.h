@@ -3940,9 +3940,6 @@ typedef struct
 #ifdef FEATURE_WLAN_LFR
    uint8_t                     bssid_blacklist_timeout;
 #endif
-#ifdef FEATURE_WLAN_LFR
-   uint8_t                     bssid_blacklist_timeout;
-#endif
 } hdd_config_t;
 
 /*--------------------------------------------------------------------------- 
