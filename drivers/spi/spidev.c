@@ -740,8 +740,6 @@ static int spidev_release(struct inode *inode, struct file *filp)
 
 		kfree(spidev->rx_buffer);
 		spidev->rx_buffer = NULL;
-*/
-//end liuhongtao removed for buffer kmalloc size
 
 		if (dofree)
 			kfree(spidev);
