@@ -496,9 +496,6 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	dws->dma_addr = (dma_addr_t)(dws->paddr + DW_SPI_DR);
 	snprintf(dws->name, sizeof(dws->name), "dw_spi%d", dws->bus_num);
 	spin_lock_init(&dws->buf_lock);
-
-	spi_master_set_devdata(master, dws);
-
 	ret = request_irq(dws->irq, dw_spi_irq, IRQF_SHARED, dws->name, master);
 	if (ret < 0) {
 		dev_err(dev, "can not get IRQ\n");

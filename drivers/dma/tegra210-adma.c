@@ -765,10 +765,8 @@ static int tegra_adma_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 
 	ret = pm_runtime_get_sync(&pdev->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(&pdev->dev);
+	if (ret < 0)
 		goto rpm_disable;
-	}
 
 	ret = tegra_adma_init(tdma);
 	if (ret)

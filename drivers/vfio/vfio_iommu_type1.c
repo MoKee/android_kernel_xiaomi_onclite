@@ -256,12 +256,9 @@ retry:
 	vma = find_vma_intersection(current->mm, vaddr, vaddr + 1);
 
 	if (vma && vma->vm_flags & VM_PFNMAP) {
-		ret = follow_fault_pfn(vma, current->mm, vaddr, pfn, prot & IOMMU_WRITE);
-		if (ret == -EAGAIN)
-			goto retry;
-
-		if (!ret && !is_invalid_reserved_pfn(*pfn))
-			ret = -EFAULT;
+		if (!follow_pfn(vma, vaddr, pfn) &&
+		    is_invalid_reserved_pfn(*pfn))
+			ret = 0;
 	}
 
 	up_read(&current->mm->mmap_sem);
