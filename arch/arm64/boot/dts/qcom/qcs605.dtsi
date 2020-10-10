@@ -51,15 +51,7 @@
 };
 
 &pil_gpu_mem {
-<<<<<<< HEAD
-	reg = <0 0x91c15000 0 0x4000>;
-};
-
-&qseecom_mem {
-	reg = <0 0x9e800000 0 0x1000000>;
-=======
 	reg = <0 0x90f15000 0 0x4000>;
->>>>>>> cbe61c7f522aaaaa8c34d807a40aa26746c3dd08
 };
 
 &adsp_mem {
