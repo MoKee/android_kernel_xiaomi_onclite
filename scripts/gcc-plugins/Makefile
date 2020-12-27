@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 GCC_PLUGINS_DIR := $(shell $(CC) -print-file-name=plugin)
 
 ifeq ($(PLUGINCC),$(HOSTCC))
@@ -14,15 +13,11 @@ else
   export HOST_EXTRACXXFLAGS
 endif
 
-export HOSTLIBS
+ifneq ($(CFLAGS_KCOV), $(SANCOV_PLUGIN))
+  GCC_PLUGIN := $(filter-out $(SANCOV_PLUGIN), $(GCC_PLUGIN))
+endif
 
-$(obj)/randomize_layout_plugin.o: $(objtree)/$(obj)/randomize_layout_seed.h
-quiet_cmd_create_randomize_layout_seed = GENSEED $@
-cmd_create_randomize_layout_seed = \
-  $(CONFIG_SHELL) $(srctree)/$(src)/gen-random-seed.sh $@ $(objtree)/include/generated/randomize_layout_hash.h
-$(objtree)/$(obj)/randomize_layout_seed.h: FORCE
-	$(call if_changed,create_randomize_layout_seed)
-targets = randomize_layout_seed.h randomize_layout_hash.h
+export HOSTLIBS
 
 $(HOSTLIBS)-y := $(foreach p,$(GCC_PLUGIN),$(if $(findstring /,$(p)),,$(p)))
 always := $($(HOSTLIBS)-y)

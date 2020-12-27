@@ -101,25 +101,16 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
 
 	while (true) {
 		/*
-		 * Loop invariant: node is red.
+		 * Loop invariant: node is red
+		 *
+		 * If there is a black parent, we are done.
+		 * Otherwise, take some corrective action as we don't
+		 * want a red root or two consecutive red nodes.
 		 */
-		if (unlikely(!parent)) {
-			/*
-			 * The inserted node is root. Either this is the
-			 * first node, or we recursed at Case 1 below and
-			 * are no longer violating 4).
-			 */
+		if (!parent) {
 			rb_set_parent_color(node, NULL, RB_BLACK);
 			break;
-		}
-
-		/*
-		 * If there is a black parent, we are done.
-		 * Otherwise, take some corrective action as,
-		 * per 4), we don't want a red root or two
-		 * consecutive red nodes.
-		 */
-		if(rb_is_black(parent))
+		} else if (rb_is_black(parent))
 			break;
 
 		gparent = rb_red_parent(parent);
@@ -128,7 +119,7 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
 		if (parent != tmp) {	/* parent == gparent->rb_left */
 			if (tmp && rb_is_red(tmp)) {
 				/*
-				 * Case 1 - node's uncle is red (color flips).
+				 * Case 1 - color flips
 				 *
 				 *       G            g
 				 *      / \          / \
@@ -151,8 +142,7 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
 			tmp = parent->rb_right;
 			if (node == tmp) {
 				/*
-				 * Case 2 - node's uncle is black and node is
-				 * the parent's right child (left rotate at parent).
+				 * Case 2 - left rotate at parent
 				 *
 				 *      G             G
 				 *     / \           / \
@@ -176,8 +166,7 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
 			}
 
 			/*
-			 * Case 3 - node's uncle is black and node is
-			 * the parent's left child (right rotate at gparent).
+			 * Case 3 - right rotate at gparent
 			 *
 			 *        G           P
 			 *       / \         / \
@@ -496,7 +485,7 @@ struct rb_node *rb_next(const struct rb_node *node)
 	 * as we can.
 	 */
 	if (node->rb_right) {
-		node = node->rb_right;
+		node = node->rb_right; 
 		while (node->rb_left)
 			node=node->rb_left;
 		return (struct rb_node *)node;
@@ -528,7 +517,7 @@ struct rb_node *rb_prev(const struct rb_node *node)
 	 * as we can.
 	 */
 	if (node->rb_left) {
-		node = node->rb_left;
+		node = node->rb_left; 
 		while (node->rb_right)
 			node=node->rb_right;
 		return (struct rb_node *)node;

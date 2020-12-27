@@ -49,7 +49,6 @@
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/processor.h>
-#include <asm/scs.h>
 #include <asm/smp_plat.h>
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -57,7 +56,6 @@
 #include <asm/virt.h>
 #include <soc/qcom/minidump.h>
 
-#include <soc/qcom/lpm_levels.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/ipi.h>
 
@@ -384,9 +382,6 @@ void __cpu_die(unsigned int cpu)
 void cpu_die(void)
 {
 	unsigned int cpu = smp_processor_id();
-
-	/* Save the shadow stack pointer before exiting the idle task */
-	scs_save(current);
 
 	idle_task_exit();
 
@@ -1009,7 +1004,6 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 void smp_send_reschedule(int cpu)
 {
 	BUG_ON(cpu_is_offline(cpu));
-	update_ipi_history(cpu);
 	smp_cross_call_common(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 

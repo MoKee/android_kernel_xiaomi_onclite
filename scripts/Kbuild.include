@@ -86,8 +86,8 @@ TMPOUT = $(if $(KBUILD_EXTMOD),$(firstword $(KBUILD_EXTMOD))/).tmp_$$$$
 
 # try-run
 # Usage: option = $(call try-run, $(CC)...-o "$$TMP",option-ok,otherwise)
-# Exit code chooses option. "$$TMP" serves as a temporary file and is
-# automatically cleaned up.
+# Exit code chooses option. "$$TMP" is can be used as temporary file and
+# is automatically cleaned up.
 try-run = $(shell set -e;		\
 	TMP=$(TMPOUT)/tmp;		\
 	TMPO=$(TMPOUT)/tmp.o;		\
@@ -134,6 +134,11 @@ hostcc-option = $(call __cc-option, $(HOSTCC),\
 # Usage: flag := $(call cc-option-yn,-march=winchip-c6)
 cc-option-yn = $(call try-run,\
 	$(CC) -Werror $(KBUILD_CPPFLAGS) $(CC_OPTION_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",y,n)
+
+# cc-option-align
+# Prefix align with either -falign or -malign
+cc-option-align = $(subst -functions=0,,\
+	$(call cc-option,-falign-functions=0,-malign-functions=0))
 
 # cc-disable-warning
 # Usage: cflags-y += $(call cc-disable-warning,unused-but-set-variable)
@@ -186,10 +191,6 @@ cc-fullversion = $(shell $(CONFIG_SHELL) \
 cc-ifversion = $(gcc-ifversion)
 cc-if-fullversion = $(gcc-if-fullversion)
 
-# cc-if-fullversion
-# Usage:  EXTRA_CFLAGS += $(call cc-if-fullversion, -lt, 040502, -O1)
-cc-if-fullversion = $(shell [ $(cc-fullversion) $(1) $(2) ] && echo $(3) || echo $(4))
-
 # cc-ldoption
 # Usage: ldflags += $(call cc-ldoption, -Wl$(comma)--hash-style=both)
 cc-ldoption = $(call try-run,\
@@ -197,9 +198,7 @@ cc-ldoption = $(call try-run,\
 
 # ld-option
 # Usage: LDFLAGS += $(call ld-option, -X)
-ld-option = $(call try-run,\
-	$(CC) $(KBUILD_CPPFLAGS) $(CC_OPTION_CFLAGS) -x c /dev/null -c -o "$$TMPO"; \
-	$(LD) $(LDFLAGS) $(1) "$$TMPO" -o "$$TMP",$(1),$(2))
+ld-option = $(call try-run, $(LD) $(LDFLAGS) $(1) -v,$(1),$(2))
 
 # ar-option
 # Usage: KBUILD_ARFLAGS := $(call ar-option,D)
@@ -207,19 +206,8 @@ ld-option = $(call try-run,\
 ar-option = $(call try-run, $(AR) rc$(1) "$$TMP",$(1),$(2))
 
 # ld-name
-# Expands to either bfd, gold, or lld
-ifneq (,$(LD))
-	__ld-name = $(shell $(LD) -v 2>&1)
-endif
-ifneq (,$(findstring GNU gold,$(__ld-name)))
-	ld-name = gold
-else
-	ifneq (,$(findstring LLD,$(__ld-name)))
-		ld-name = lld
-	else
-		ld-name = bfd
-	endif
-endif
+# Expands to either bfd or gold
+ld-name = $(shell $(LD) -v 2>&1 | grep -q "GNU gold" && echo gold || echo bfd)
 
 # ld-version
 # Note this is mainly for HJ Lu's 3 number binutil versions
@@ -322,6 +310,7 @@ make-cmd = $(call escsq,$(subst $(pound),$$(pound),$(subst $$,$$$$,$(cmd_$(1))))
 any-prereq = $(filter-out $(PHONY),$?) $(filter-out $(PHONY) $(wildcard $^),$^)
 
 # Execute command if command has changed or prerequisite(s) are updated.
+#
 if_changed = $(if $(strip $(any-prereq) $(arg-check)),                       \
 	@set -e;                                                             \
 	$(echo-cmd) $(cmd_$(1));                                             \
@@ -353,7 +342,7 @@ ksym_dep_filter =                                                            \
 	    $(CPP) $(call flags_nodeps,c_flags) -D__KSYM_DEPS__ $< ;;        \
 	  as_*_S|cpp_s_S)                                                    \
 	    $(CPP) $(call flags_nodeps,a_flags) -D__KSYM_DEPS__ $< ;;        \
-	  boot*|build*|cpp_its_S|*cpp_lds_S|dtc|host*|vdso*) : ;;            \
+	  boot*|build*|*cpp_lds_S|dtc|host*|vdso*) : ;;                      \
 	  *) echo "Don't know how to preprocess $(1)" >&2; false ;;          \
 	esac | tr ";" "\n" | sed -rn 's/^.*=== __KSYM_(.*) ===.*$$/KSYM_\1/p'
 
@@ -375,7 +364,7 @@ if_changed_rule = $(if $(strip $(any-prereq) $(arg-check) ),                 \
 	$(rule_$(1)), @:)
 
 ###
-# why - tell why a target got built
+# why - tell why a a target got build
 #       enabled by make V=2
 #       Output (listed in the order they are checked):
 #          (1) - due to target is PHONY

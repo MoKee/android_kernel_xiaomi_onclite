@@ -611,7 +611,7 @@ static int
 cpu_has_callbacks_ready_to_invoke(struct rcu_data *rdp)
 {
 	return &rdp->nxtlist != rdp->nxttail[RCU_DONE_TAIL] &&
-	       rdp->nxttail[RCU_NEXT_TAIL] != NULL;
+	       rdp->nxttail[RCU_DONE_TAIL] != NULL;
 }
 
 /*
@@ -1317,8 +1317,7 @@ static void rcu_stall_kick_kthreads(struct rcu_state *rsp)
 	if (!rcu_kick_kthreads)
 		return;
 	j = READ_ONCE(rsp->jiffies_kick_kthreads);
-	if (time_after(jiffies, j) && rsp->gp_kthread &&
-	    (rcu_gp_in_progress(rsp) || READ_ONCE(rsp->gp_flags))) {
+	if (time_after(jiffies, j) && rsp->gp_kthread) {
 		WARN_ONCE(1, "Kicking %s grace-period kthread\n", rsp->name);
 		rcu_ftrace_dump(DUMP_ALL);
 		wake_up_process(rsp->gp_kthread);
@@ -1735,7 +1734,7 @@ static int rcu_future_gp_cleanup(struct rcu_state *rsp, struct rcu_node *rnp)
 static void rcu_gp_kthread_wake(struct rcu_state *rsp)
 {
 	if ((current == rsp->gp_kthread &&
-	     !in_irq() && !in_serving_softirq()) ||
+	     !in_interrupt() && !in_serving_softirq()) ||
 	    !READ_ONCE(rsp->gp_flags) ||
 	    !rsp->gp_kthread)
 		return;
@@ -2502,11 +2501,11 @@ rcu_report_qs_rdp(int cpu, struct rcu_state *rsp, struct rcu_data *rdp)
 		return;
 	}
 	mask = rdp->grpmask;
-	rdp->core_needs_qs = false;
 	if ((rnp->qsmask & mask) == 0) {
-		rdp->core_needs_qs = false;
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 	} else {
+		rdp->core_needs_qs = false;
+
 		/*
 		 * This GP can't end until cpu checks in, so all of our
 		 * callbacks can be processed during the next GP.
@@ -2850,7 +2849,8 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
  * Also schedule RCU core processing.
  *
  * This function must be called from hardirq context.  It is normally
- * invoked from the scheduling-clock interrupt.
+ * invoked from the scheduling-clock interrupt.  If rcu_pending returns
+ * false, there is no point in invoking rcu_check_callbacks().
  */
 void rcu_check_callbacks(int user)
 {
@@ -3142,9 +3142,7 @@ __call_rcu(struct rcu_head *head, rcu_callback_t func,
 	unsigned long flags;
 	struct rcu_data *rdp;
 
-	/* Misaligned rcu_head! */
-	WARN_ON_ONCE((unsigned long)head & (sizeof(void *) - 1));
-
+	WARN_ON_ONCE((unsigned long)head & 0x1); /* Misaligned rcu_head! */
 	if (debug_rcu_head_queue(head)) {
 		/* Probable double call_rcu(), so leak the callback. */
 		WRITE_ONCE(head->func, rcu_leak_callback);
@@ -3153,6 +3151,13 @@ __call_rcu(struct rcu_head *head, rcu_callback_t func,
 	}
 	head->func = func;
 	head->next = NULL;
+
+	/*
+	 * Opportunistically note grace-period endings and beginnings.
+	 * Note that we might see a beginning right after we see an
+	 * end, but never vice versa, since this CPU has to pass through
+	 * a quiescent state betweentimes.
+	 */
 	local_irq_save(flags);
 	rdp = this_cpu_ptr(rsp->rda);
 
@@ -3943,11 +3948,13 @@ static int rcu_pm_notify(struct notifier_block *self,
 	switch (action) {
 	case PM_HIBERNATION_PREPARE:
 	case PM_SUSPEND_PREPARE:
-		rcu_expedite_gp();
+		if (nr_cpu_ids <= 256) /* Expediting bad for large systems. */
+			rcu_expedite_gp();
 		break;
 	case PM_POST_HIBERNATION:
 	case PM_POST_SUSPEND:
-		rcu_unexpedite_gp();
+		if (nr_cpu_ids <= 256) /* Expediting bad for large systems. */
+			rcu_unexpedite_gp();
 		break;
 	default:
 		break;

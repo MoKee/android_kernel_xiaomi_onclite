@@ -58,7 +58,7 @@ MODULE_PARM_DESC(swfdetect, "Enable soft fault detection");
 #define DRIVER_VERSION_MAJOR   3
 #define DRIVER_VERSION_MINOR   1
 
-#define KGSL_LOG_LEVEL_DEFAULT 0
+#define KGSL_LOG_LEVEL_DEFAULT 3
 
 static void adreno_input_work(struct work_struct *work);
 static unsigned int counter_delta(struct kgsl_device *device,
@@ -1171,17 +1171,17 @@ static int adreno_of_get_power(struct adreno_device *adreno_dev,
 	/* get pm-qos-active-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,pm-qos-active-latency",
 		&device->pwrctrl.pm_qos_active_latency))
-		device->pwrctrl.pm_qos_active_latency = 1000;
+		device->pwrctrl.pm_qos_active_latency = 501;
 
 	/* get pm-qos-cpu-mask-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,l2pc-cpu-mask-latency",
 		&device->pwrctrl.pm_qos_cpu_mask_latency))
-		device->pwrctrl.pm_qos_cpu_mask_latency = 1000;
+		device->pwrctrl.pm_qos_cpu_mask_latency = 501;
 
 	/* get pm-qos-wakeup-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,pm-qos-wakeup-latency",
 		&device->pwrctrl.pm_qos_wakeup_latency))
-		device->pwrctrl.pm_qos_wakeup_latency = 100;
+		device->pwrctrl.pm_qos_wakeup_latency = 101;
 
 	if (of_property_read_u32(node, "qcom,idle-timeout", &timeout))
 		timeout = 80;

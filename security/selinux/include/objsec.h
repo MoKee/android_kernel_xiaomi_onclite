@@ -40,8 +40,7 @@ struct task_security_struct {
 
 enum label_initialized {
 	LABEL_INVALID,		/* invalid or not initialized */
-	LABEL_INITIALIZED,	/* initialized */
-	LABEL_PENDING
+	LABEL_INITIALIZED	/* initialized */
 };
 
 struct inode_security_struct {
@@ -56,7 +55,7 @@ struct inode_security_struct {
 	unsigned char initialized;	/* initialization flag */
 	u32 tag;		/* Per-File-Encryption tag */
 	void *pfk_data; /* Per-File-Key data from ecryptfs */
-	spinlock_t lock;
+	struct mutex lock;
 };
 
 struct file_security_struct {
@@ -133,11 +132,7 @@ struct key_security_struct {
 };
 
 struct bpf_security_struct {
-	u32 sid;  /* SID of bpf obj creator */
-};
-
-struct perf_event_security_struct {
-	u32 sid;  /* SID of perf_event obj creator */
+	u32 sid;  /*SID of bpf obj creater*/
 };
 
 extern unsigned int selinux_checkreqprot;
