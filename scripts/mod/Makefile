@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
 OBJECT_FILES_NON_STANDARD := y
 CFLAGS_empty.o += $(DISABLE_LTO)
 

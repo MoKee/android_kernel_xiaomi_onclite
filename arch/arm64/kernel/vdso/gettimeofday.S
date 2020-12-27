@@ -66,7 +66,16 @@ x_tmp		.req	x8
 	.macro	get_clock_shifted_nsec res, cycle_last, mult
 	/* Read the virtual counter. */
 	isb
+#if IS_ENABLED(CONFIG_MSM_TIMER_LEAP)
+#define LEAST_32BITS	0x00000000FFFFFFFF
+9999:
+	mrs x_tmp, cntvct_el0
+	and \res, x_tmp, #LEAST_32BITS
+	eor \res, \res, #LEAST_32BITS
+	cbz \res, 9999b
+#else
 	mrs	x_tmp, cntvct_el0
+#endif
 	/* Calculate cycle delta and convert to ns. */
 	sub	\res, x_tmp, \cycle_last
 	/* We can only guarantee 56 bits of precision. */
@@ -301,13 +310,14 @@ ENTRY(__kernel_clock_getres)
 	ccmp	w0, #CLOCK_MONOTONIC_RAW, #0x4, ne
 	b.ne	1f
 
-	ldr	x2, 5f
+	adr	vdso_data, _vdso_data
+	ldr	w2, [vdso_data, #CLOCK_REALTIME_RES]
 	b	2f
 1:
 	cmp	w0, #CLOCK_REALTIME_COARSE
 	ccmp	w0, #CLOCK_MONOTONIC_COARSE, #0x4, ne
 	b.ne	4f
-	ldr	x2, 6f
+	ldr	x2, 5f
 2:
 	cbz	x1, 3f
 	stp	xzr, x2, [x1]
@@ -321,8 +331,6 @@ ENTRY(__kernel_clock_getres)
 	svc	#0
 	ret
 5:
-	.quad	CLOCK_REALTIME_RES
-6:
 	.quad	CLOCK_COARSE_RES
 	.cfi_endproc
 ENDPROC(__kernel_clock_getres)

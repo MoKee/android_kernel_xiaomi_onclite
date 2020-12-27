@@ -3,7 +3,7 @@
  * FocalTech TouchScreen driver.
  *
  * Copyright (c) 2012-2018, FocalTech Systems, Ltd., all rights reserved.
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -188,7 +188,7 @@ int fts_i2c_read_reg(struct i2c_client *client, u8 regaddr, u8 *regvalue)
 /************************************************************************
 * HID to standard I2C
 ***********************************************************************/
-void fts_i2c_hid2std(struct i2c_client *client)
+int fts_i2c_hid2std(struct i2c_client *client)
 {
 	int ret = 0;
 	u8 buf[3] = {0xeb, 0xaa, 0x09};
@@ -208,6 +208,7 @@ void fts_i2c_hid2std(struct i2c_client *client)
 			FTS_ERROR("hidi2c change to stdi2c fail");
 		}
 	}
+	return ret;
 }
 
 /************************************************************************

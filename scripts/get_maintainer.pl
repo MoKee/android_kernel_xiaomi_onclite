@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/bin/perl -w
 # (c) 2007, Joe Perches <joe@perches.com>
 #           created from checkpatch.pl
 #
@@ -10,7 +10,6 @@
 #
 # Licensed under the terms of the GNU GPL License version 2
 
-use warnings;
 use strict;
 
 my $P = $0;
@@ -18,7 +17,6 @@ my $V = '0.26';
 
 use Getopt::Long qw(:config no_auto_abbrev);
 use Cwd;
-use File::Find;
 
 my $cur_path = fastgetcwd() . '/';
 my $lk_path = "./";
@@ -51,7 +49,6 @@ my $scm = 0;
 my $web = 0;
 my $subsystem = 0;
 my $status = 0;
-my $letters = "";
 my $keywords = 1;
 my $sections = 0;
 my $file_emails = 0;
@@ -59,7 +56,6 @@ my $from_filename = 0;
 my $pattern_depth = 0;
 my $version = 0;
 my $help = 0;
-my $find_maintainer_files = 0;
 
 my $vcs_used = 0;
 
@@ -245,13 +241,11 @@ if (!GetOptions(
 		'status!' => \$status,
 		'scm!' => \$scm,
 		'web!' => \$web,
-		'letters=s' => \$letters,
 		'pattern-depth=i' => \$pattern_depth,
 		'k|keywords!' => \$keywords,
 		'sections!' => \$sections,
 		'fe|file-emails!' => \$file_emails,
 		'f|file' => \$from_filename,
-		'find-maintainer-files' => \$find_maintainer_files,
 		'v|version' => \$version,
 		'h|help|usage' => \$help,
 		)) {
@@ -277,8 +271,7 @@ $output_multiline = 0 if ($output_separator ne ", ");
 $output_rolestats = 1 if ($interactive);
 $output_roles = 1 if ($output_rolestats);
 
-if ($sections || $letters ne "") {
-    $sections = 1;
+if ($sections) {
     $email = 0;
     $email_list = 0;
     $scm = 0;
@@ -310,74 +303,36 @@ if (!top_of_kernel_tree($lk_path)) {
 
 my @typevalue = ();
 my %keyword_hash;
-my @mfiles = ();
 
-sub read_maintainer_file {
-    my ($file) = @_;
+open (my $maint, '<', "${lk_path}MAINTAINERS")
+    or die "$P: Can't open MAINTAINERS: $!\n";
+while (<$maint>) {
+    my $line = $_;
 
-    open (my $maint, '<', "$file")
-	or die "$P: Can't open MAINTAINERS file '$file': $!\n";
-    while (<$maint>) {
-	my $line = $_;
+    if ($line =~ m/^([A-Z]):\s*(.*)/) {
+	my $type = $1;
+	my $value = $2;
 
-	if ($line =~ m/^([A-Z]):\s*(.*)/) {
-	    my $type = $1;
-	    my $value = $2;
-
-	    ##Filename pattern matching
-	    if ($type eq "F" || $type eq "X") {
-		$value =~ s@\.@\\\.@g;       ##Convert . to \.
-		$value =~ s/\*/\.\*/g;       ##Convert * to .*
-		$value =~ s/\?/\./g;         ##Convert ? to .
-		##if pattern is a directory and it lacks a trailing slash, add one
-		if ((-d $value)) {
-		    $value =~ s@([^/])$@$1/@;
-		}
-	    } elsif ($type eq "K") {
-		$keyword_hash{@typevalue} = $value;
+	##Filename pattern matching
+	if ($type eq "F" || $type eq "X") {
+	    $value =~ s@\.@\\\.@g;       ##Convert . to \.
+	    $value =~ s/\*/\.\*/g;       ##Convert * to .*
+	    $value =~ s/\?/\./g;         ##Convert ? to .
+	    ##if pattern is a directory and it lacks a trailing slash, add one
+	    if ((-d $value)) {
+		$value =~ s@([^/])$@$1/@;
 	    }
-	    push(@typevalue, "$type:$value");
-	} elsif (!(/^\s*$/ || /^\s*\#/)) {
-	    $line =~ s/\n$//g;
-	    push(@typevalue, $line);
+	} elsif ($type eq "K") {
+	    $keyword_hash{@typevalue} = $value;
 	}
-    }
-    close($maint);
-}
-
-sub find_is_maintainer_file {
-    my ($file) = $_;
-    return if ($file !~ m@/MAINTAINERS$@);
-    $file = $File::Find::name;
-    return if (! -f $file);
-    push(@mfiles, $file);
-}
-
-sub find_ignore_git {
-    return grep { $_ !~ /^\.git$/; } @_;
-}
-
-if (-d "${lk_path}MAINTAINERS") {
-    opendir(DIR, "${lk_path}MAINTAINERS") or die $!;
-    my @files = readdir(DIR);
-    closedir(DIR);
-    foreach my $file (@files) {
-	push(@mfiles, "${lk_path}MAINTAINERS/$file") if ($file !~ /^\./);
+	push(@typevalue, "$type:$value");
+    } elsif (!/^(\s)*$/) {
+	$line =~ s/\n$//g;
+	push(@typevalue, $line);
     }
 }
+close($maint);
 
-if ($find_maintainer_files) {
-    find( { wanted => \&find_is_maintainer_file,
-	    preprocess => \&find_ignore_git,
-	    no_chdir => 1,
-	}, "${lk_path}");
-} else {
-    push(@mfiles, "${lk_path}MAINTAINERS") if -f "${lk_path}MAINTAINERS";
-}
-
-foreach my $file (@mfiles) {
-    read_maintainer_file("$file");
-}
 
 #
 # Read mail address map
@@ -727,10 +682,8 @@ sub get_maintainers {
 			$line =~ s/\\\./\./g;       	##Convert \. to .
 			$line =~ s/\.\*/\*/g;       	##Convert .* to *
 		    }
-		    my $count = $line =~ s/^([A-Z]):/$1:\t/g;
-		    if ($letters eq "" || (!$count || $letters =~ /$1/i)) {
-			print("$line\n");
-		    }
+		    $line =~ s/^([A-Z]):/$1:\t/g;
+		    print("$line\n");
 		}
 		print("\n");
 	    }
@@ -861,7 +814,6 @@ Other options:
   --pattern-depth => Number of pattern directory traversals (default: 0 (all))
   --keywords => scan patch for keywords (default: $keywords)
   --sections => print all of the subsystem sections with pattern matches
-  --letters => print all matching 'letter' types from all matching sections
   --mailmap => use .mailmap file (default: $email_use_mailmap)
   --version => show version
   --help => show this help information
@@ -914,7 +866,7 @@ sub top_of_kernel_tree {
     if (   (-f "${lk_path}COPYING")
 	&& (-f "${lk_path}CREDITS")
 	&& (-f "${lk_path}Kbuild")
-	&& (-e "${lk_path}MAINTAINERS")
+	&& (-f "${lk_path}MAINTAINERS")
 	&& (-f "${lk_path}Makefile")
 	&& (-f "${lk_path}README")
 	&& (-d "${lk_path}Documentation")

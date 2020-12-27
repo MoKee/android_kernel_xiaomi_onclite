@@ -68,9 +68,9 @@
 		qcom,id = <0>;
 		qcom,chipid = <0x05000600>;
 
-		qcom,initial-pwrlevel = <6>;
+		qcom,initial-pwrlevel = <4>;
 
-		qcom,idle-timeout = <64>; //msecs
+		qcom,idle-timeout = <80>; //msecs
 		qcom,deep-nap-timeout = <100>; //msecs
 		qcom,strtstp-sleepwake;
 
@@ -114,9 +114,6 @@
 		/* GDSC oxili regulators */
 		vddcx-supply = <&gdsc_oxili_cx>;
 		vdd-supply = <&gdsc_oxili_gx>;
-
-		/* Define GPU thermal zones */
-		tzone-names = "gpu0-usr", "gpu1-usr";
 
 		/* CPU latency parameter */
 		qcom,pm-qos-active-latency = <213>;

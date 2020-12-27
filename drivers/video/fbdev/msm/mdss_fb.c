@@ -49,8 +49,6 @@
 #include <linux/mdss_io_util.h>
 #include <linux/wakelock.h>
 #include "mdss_dsi.h"
-#include <linux/devfreq_boost.h>
-
 #include "mdss_fb.h"
 #include "mdss_mdp_splash_logo.h"
 #define CREATE_TRACE_POINTS
@@ -1927,7 +1925,6 @@ static int mdss_fb_probe(struct platform_device *pdev)
 
 	if (mfd->panel.type == SPI_PANEL)
 		mfd->fb_imgType = MDP_RGB_565;
-
 	if (mfd->panel.type == MIPI_VIDEO_PANEL || mfd->panel.type ==
 		MIPI_CMD_PANEL || mfd->panel.type == SPI_PANEL){
 		rc = of_property_read_string(pdev->dev.of_node,
@@ -1941,7 +1938,6 @@ static int mdss_fb_probe(struct platform_device *pdev)
 				mfd->fb_imgType = MDP_RGBA_8888;
 			}
 		}
-
 	mfd->split_fb_left = mfd->split_fb_right = 0;
 
 	mdss_fb_set_split_mode(mfd, pdata);
@@ -2857,9 +2853,8 @@ void mdss_fb_free_fb_ion_memory(struct msm_fb_data_type *mfd)
 
 	ion_unmap_kernel(mfd->fb_ion_client, mfd->fb_ion_handle);
 
-	if ((mfd->mdp.fb_mem_get_iommu_domain ||
-		(mfd->panel.type == SPI_PANEL)) &&
-		!(!mfd->fb_attachment || !mfd->fb_attachment->dmabuf ||
+	if (mfd->mdp.fb_mem_get_iommu_domain && !(!mfd->fb_attachment ||
+		!mfd->fb_attachment->dmabuf ||
 		!mfd->fb_attachment->dmabuf->ops)) {
 		dma_buf_unmap_attachment(mfd->fb_attachment, mfd->fb_table,
 				DMA_BIDIRECTIONAL);
@@ -2919,20 +2914,6 @@ int mdss_fb_alloc_fb_ion_memory(struct msm_fb_data_type *mfd, size_t fb_size)
 
 		mfd->fb_table = dma_buf_map_attachment(mfd->fb_attachment,
 				DMA_BIDIRECTIONAL);
-		if (IS_ERR(mfd->fb_table)) {
-			rc = PTR_ERR(mfd->fb_table);
-			goto err_detach;
-		}
-	} else if (mfd->panel.type == SPI_PANEL) {
-		mfd->fb_attachment = dma_buf_attach(mfd->fbmem_buf,
-				&mfd->pdev->dev);
-		if (IS_ERR(mfd->fb_attachment)) {
-			rc = PTR_ERR(mfd->fb_attachment);
-			goto err_put;
-		}
-
-		mfd->fb_table = dma_buf_map_attachment(mfd->fb_attachment,
-			DMA_BIDIRECTIONAL);
 		if (IS_ERR(mfd->fb_table)) {
 			rc = PTR_ERR(mfd->fb_table);
 			goto err_detach;
@@ -5662,7 +5643,6 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = mdss_fb_mode_switch(mfd, dsi_mode);
 		break;
 	case MSMFB_ATOMIC_COMMIT:
-		devfreq_boost_kick(DEVFREQ_MSM_CPUBW);
 		ret = mdss_fb_atomic_commit_ioctl(info, argp, file);
 		break;
 
