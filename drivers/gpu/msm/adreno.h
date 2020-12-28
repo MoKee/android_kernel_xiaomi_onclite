@@ -1088,8 +1088,6 @@ extern unsigned int *adreno_ft_regs;
 extern unsigned int adreno_ft_regs_num;
 extern unsigned int *adreno_ft_regs_val;
 
-extern struct adreno_gpudev adreno_a3xx_gpudev;
-extern struct adreno_gpudev adreno_a4xx_gpudev;
 extern struct adreno_gpudev adreno_a5xx_gpudev;
 extern struct adreno_gpudev adreno_a6xx_gpudev;
 
@@ -1882,12 +1880,14 @@ static inline unsigned int counter_delta(struct kgsl_device *device,
 			 * Since KGSL got abnormal value from the counter,
 			 * We will drop the value from being accumulated.
 			 */
+#if 0
 			KGSL_DRV_ERR_RATELIMIT(device,
 				"Abnormal value:0x%llx (0x%llx) from perf counter : 0x%x\n",
 				val | ((uint64_t)perfctr_pwr_hi << 32),
 				*counter |
 					((uint64_t)prev_perfctr_pwr_hi << 32),
 				reg);
+#endif
 		}
 	}
 
