@@ -23,7 +23,7 @@
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <linux/suspend.h>
-#include <linux/clk/msm-clk-provider.h>
+#include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
@@ -313,11 +313,11 @@ static struct freq_attr *msm_freq_attr[] = {
 	NULL,
 };
 
-static unsigned long max_freq;
+static unsigned long max_freq = 0;
 static int cpumaxfreq_proc_show(struct seq_file *m, void *v)
 {
 	unsigned long freq = 0;
-	if ((max_freq / 1000) % 10 >= 5)
+	if((max_freq / 1000) % 10 >= 5)	//rounded to 0.1
 		freq = 1 + (max_freq / 10000);
 	else
 		freq = (max_freq / 10000);
@@ -444,7 +444,7 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 		ftbl[j].driver_data = j;
 		ftbl[j].frequency = f;
 		j++;
-		if (max_freq < f)
+		if(max_freq < f)
 			max_freq = f;
 	}
 
@@ -476,9 +476,6 @@ static int msm_cpufreq_probe(struct platform_device *pdev)
 			return PTR_ERR(c);
 		else if (IS_ERR(c))
 			c = cpu_clk[cpu-1];
-#ifdef CONFIG_COMMON_CLK_MSM
-		c->flags |= CLKFLAG_NO_RATE_CACHE;
-#endif
 		cpu_clk[cpu] = c;
 	}
 	hotplug_ready = true;

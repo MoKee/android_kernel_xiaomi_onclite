@@ -1,5 +1,5 @@
 /* Copyright (c) 2018 The Linux Foundation. All rights reserved.
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -78,7 +78,6 @@ enum print_reason {
 
 #define THERMAL_CONFIG_FB		1
 #define XIAOMI_CHARGER_RUNIN 	//lct add for xiaomi RUNIN 20181105
-
 #define BOOST_BACK_STORM_COUNT	3
 #define WEAK_CHG_STORM_COUNT	8
 
@@ -428,12 +427,10 @@ struct smb_charger {
 	int			charge_full_cc;
 	int			cc_soc_ref;
 	int			last_cc_soc;
-
 	#ifdef THERMAL_CONFIG_FB
 	struct notifier_block notifier;
 	struct work_struct fb_notify_work;
 	#endif
-
 	/* workaround flag */
 	u32			wa_flags;
 	int			boost_current_ua;

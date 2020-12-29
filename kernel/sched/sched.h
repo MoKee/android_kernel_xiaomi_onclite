@@ -15,7 +15,6 @@
 #include <linux/tick.h>
 #include <linux/slab.h>
 #include <linux/sched_energy.h>
-#include <linux/energy_model.h>
 
 #include "cpupri.h"
 #include "cpudeadline.h"
@@ -325,6 +324,7 @@ struct cfs_bandwidth {
 	ktime_t period;
 	u64 quota, runtime;
 	s64 hierarchical_quota;
+	u64 runtime_expires;
 
 	int idle, period_active;
 	struct hrtimer period_timer, slack_timer;
@@ -529,8 +529,6 @@ struct cfs_rq {
 	struct task_group *tg;	/* group that "owns" this runqueue */
 
 #ifdef CONFIG_CFS_BANDWIDTH
-	int			runtime_enabled;
-	s64			runtime_remaining;
 
 #ifdef CONFIG_SCHED_WALT
 	struct walt_sched_stats walt_stats;
@@ -636,12 +634,6 @@ struct max_cpu_capacity {
 	int cpu;
 };
 
-struct perf_domain {
-	struct em_perf_domain *em_pd;
-	struct perf_domain *next;
-	struct rcu_head rcu;
-};
-
 /*
  * We add the notion of a root-domain which will be used to define per-domain
  * variables. Each exclusive cpuset essentially defines an island domain by
@@ -697,12 +689,6 @@ struct root_domain {
 
 	/* First cpu with maximum and minimum original capacity */
 	int max_cap_orig_cpu, min_cap_orig_cpu;
-
-	/*
-	 * NULL-terminated list of performance domains intersecting with the
-	 * CPUs of the rd. Protected by RCU.
-	 */
-	struct perf_domain *pd;
 };
 
 extern struct root_domain def_root_domain;
@@ -1166,8 +1152,7 @@ DECLARE_PER_CPU(int, sd_llc_size);
 DECLARE_PER_CPU(int, sd_llc_id);
 DECLARE_PER_CPU(struct sched_domain_shared *, sd_llc_shared);
 DECLARE_PER_CPU(struct sched_domain *, sd_numa);
-DECLARE_PER_CPU(struct sched_domain *, sd_asym_packing);
-DECLARE_PER_CPU(struct sched_domain *, sd_asym_cpucapacity);
+DECLARE_PER_CPU(struct sched_domain *, sd_asym);
 DECLARE_PER_CPU(struct sched_domain *, sd_ea);
 DECLARE_PER_CPU(struct sched_domain *, sd_scs);
 
@@ -1866,6 +1851,17 @@ unsigned long arch_scale_min_freq_capacity(struct sched_domain *sd, int cpu)
 	 * 0, which represents an un-capped state
 	 */
 	return 0;
+}
+#endif
+
+#ifndef arch_scale_cpu_capacity
+static __always_inline
+unsigned long arch_scale_cpu_capacity(struct sched_domain *sd, int cpu)
+{
+	if (sd && (sd->flags & SD_SHARE_CPUCAPACITY) && (sd->span_weight > 1))
+		return sd->smt_gain / sd->span_weight;
+
+	return SCHED_CAPACITY_SCALE;
 }
 #endif
 
@@ -2716,14 +2712,15 @@ extern void clear_top_tasks_bitmap(unsigned long *bitmap);
 #if defined(CONFIG_SCHED_TUNE) && defined(CONFIG_CGROUP_SCHEDTUNE)
 extern bool task_sched_boost(struct task_struct *p);
 extern int sync_cgroup_colocation(struct task_struct *p, bool insert);
-extern bool schedtune_task_colocated(struct task_struct *p);
+extern bool same_schedtune(struct task_struct *tsk1, struct task_struct *tsk2);
 extern void update_cgroup_boost_settings(void);
 extern void restore_cgroup_boost_settings(void);
 
 #else
-static inline bool schedtune_task_colocated(struct task_struct *p)
+static inline bool
+same_schedtune(struct task_struct *tsk1, struct task_struct *tsk2)
 {
-	return false;
+	return true;
 }
 
 static inline bool task_sched_boost(struct task_struct *p)
@@ -2993,11 +2990,6 @@ find_first_cpu_bit(struct task_struct *p, const cpumask_t *search_cpus,
 #endif
 
 #ifdef CONFIG_SMP
-#ifdef CONFIG_ENERGY_MODEL
-#define perf_domain_span(pd) (to_cpumask(((pd)->em_pd->cpus)))
-#else
-#define perf_domain_span(pd) NULL
-#endif
 static inline void sched_irq_work_queue(struct irq_work *work)
 {
 	if (likely(cpu_online(raw_smp_processor_id())))

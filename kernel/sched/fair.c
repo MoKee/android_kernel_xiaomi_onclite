@@ -4105,6 +4105,7 @@ void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 
 	now = sched_clock_cpu(smp_processor_id());
 	cfs_b->runtime = cfs_b->quota;
+	cfs_b->runtime_expires = now + ktime_to_ns(cfs_b->period);
 }
 
 static inline struct cfs_bandwidth *tg_cfs_bandwidth(struct task_group *tg)
@@ -4126,7 +4127,7 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	struct task_group *tg = cfs_rq->tg;
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(tg);
-	u64 amount = 0, min_amount;
+	u64 amount = 0, min_amount, expires;
 
 	/* note: this is a positive sum as runtime_remaining <= 0 */
 	min_amount = sched_cfs_bandwidth_slice() - cfs_rq->runtime_remaining;
@@ -4143,17 +4144,61 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 			cfs_b->idle = 0;
 		}
 	}
+	expires = cfs_b->runtime_expires;
 	raw_spin_unlock(&cfs_b->lock);
 
 	cfs_rq->runtime_remaining += amount;
+	/*
+	 * we may have advanced our local expiration to account for allowed
+	 * spread between our sched_clock and the one on which runtime was
+	 * issued.
+	 */
+	if ((s64)(expires - cfs_rq->runtime_expires) > 0)
+		cfs_rq->runtime_expires = expires;
 
 	return cfs_rq->runtime_remaining > 0;
+}
+
+/*
+ * Note: This depends on the synchronization provided by sched_clock and the
+ * fact that rq->clock snapshots this value.
+ */
+static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
+{
+	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+
+	/* if the deadline is ahead of our clock, nothing to do */
+	if (likely((s64)(rq_clock(rq_of(cfs_rq)) - cfs_rq->runtime_expires) < 0))
+		return;
+
+	if (cfs_rq->runtime_remaining < 0)
+		return;
+
+	/*
+	 * If the local deadline has passed we have to consider the
+	 * possibility that our sched_clock is 'fast' and the global deadline
+	 * has not truly expired.
+	 *
+	 * Fortunately we can check determine whether this the case by checking
+	 * whether the global deadline has advanced. It is valid to compare
+	 * cfs_b->runtime_expires without any locks since we only care about
+	 * exact equality, so a partial write will still work.
+	 */
+
+	if (cfs_rq->runtime_expires != cfs_b->runtime_expires) {
+		/* extend local deadline, drift is bounded above by 2 ticks */
+		cfs_rq->runtime_expires += TICK_NSEC;
+	} else {
+		/* global deadline is ahead, expiration has passed */
+		cfs_rq->runtime_remaining = 0;
+	}
 }
 
 static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 {
 	/* dock delta_exec before expiring quota (as it could span periods) */
 	cfs_rq->runtime_remaining -= delta_exec;
+	expire_cfs_rq_runtime(cfs_rq);
 
 	if (likely(cfs_rq->runtime_remaining > 0))
 		return;
@@ -4375,7 +4420,8 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 		resched_curr(rq);
 }
 
-static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b, u64 remaining)
+static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b,
+		u64 remaining, u64 expires)
 {
 	struct cfs_rq *cfs_rq;
 	u64 runtime;
@@ -4399,6 +4445,7 @@ static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b, u64 remaining)
 		remaining -= runtime;
 
 		cfs_rq->runtime_remaining += runtime;
+		cfs_rq->runtime_expires = expires;
 
 		/* we check whether we're throttled above */
 		if (cfs_rq->runtime_remaining > 0)
@@ -4423,7 +4470,7 @@ next:
  */
 static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 {
-	u64 runtime;
+	u64 runtime, runtime_expires;
 	int throttled;
 
 	/* no need to continue the timer with no bandwidth constraint */
@@ -4451,6 +4498,8 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	/* account preceding periods in which throttling occurred */
 	cfs_b->nr_throttled += overrun;
 
+	runtime_expires = cfs_b->runtime_expires;
+
 	/*
 	 * This check is repeated as we are holding onto the new bandwidth while
 	 * we unthrottle. This can potentially race with an unthrottled group
@@ -4463,7 +4512,8 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 		cfs_b->distribute_running = 1;
 		raw_spin_unlock(&cfs_b->lock);
 		/* we can't nest cfs_b->lock while distributing bandwidth */
-		runtime = distribute_cfs_runtime(cfs_b, runtime);
+		runtime = distribute_cfs_runtime(cfs_b, runtime,
+						 runtime_expires);
 		raw_spin_lock(&cfs_b->lock);
 
 		cfs_b->distribute_running = 0;
@@ -4540,7 +4590,8 @@ static void __return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 		return;
 
 	raw_spin_lock(&cfs_b->lock);
-	if (cfs_b->quota != RUNTIME_INF) {
+	if (cfs_b->quota != RUNTIME_INF &&
+	    cfs_rq->runtime_expires == cfs_b->runtime_expires) {
 		cfs_b->runtime += slack_runtime;
 
 		/* we are under rq->lock, defer unthrottling using a timer */
@@ -4572,7 +4623,7 @@ static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 {
 	u64 runtime = 0, slice = sched_cfs_bandwidth_slice();
-	unsigned long flags;
+	u64 expires;
 
 	/* confirm we're still not at a refresh boundary */
 	raw_spin_lock(&cfs_b->lock);
@@ -4589,6 +4640,7 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 	if (cfs_b->quota != RUNTIME_INF && cfs_b->runtime > slice)
 		runtime = cfs_b->runtime;
 
+	expires = cfs_b->runtime_expires;
 	if (runtime)
 		cfs_b->distribute_running = 1;
 
@@ -4597,10 +4649,11 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 	if (!runtime)
 		return;
 
-	runtime = distribute_cfs_runtime(cfs_b, runtime);
+	runtime = distribute_cfs_runtime(cfs_b, runtime, expires);
 
-	raw_spin_lock_irqsave(&cfs_b->lock, flags);
-	lsub_positive(&cfs_b->runtime, runtime);
+	raw_spin_lock(&cfs_b->lock);
+	if (expires == cfs_b->runtime_expires)
+		cfs_b->runtime -= min(runtime, cfs_b->runtime);
 	cfs_b->distribute_running = 0;
 	raw_spin_unlock(&cfs_b->lock);
 }
@@ -4759,7 +4812,7 @@ void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 
 	if (!cfs_b->period_active) {
 		cfs_b->period_active = 1;
-		overrun = hrtimer_forward_now(&cfs_b->period_timer, cfs_b->period);
+		hrtimer_forward_now(&cfs_b->period_timer, cfs_b->period);
 		hrtimer_start_expires(&cfs_b->period_timer, HRTIMER_MODE_ABS_PINNED);
 	}
 }
@@ -7664,248 +7717,6 @@ out:
 }
 
 /*
- * Predicts what cpu_util(@cpu) would return if @p was migrated (and enqueued)
- * to @dst_cpu.
- */
-static unsigned long cpu_util_next(int cpu, struct task_struct *p, int dst_cpu)
-{
-	struct cfs_rq *cfs_rq = &cpu_rq(cpu)->cfs;
-	unsigned long util;
-
-#ifdef CONFIG_SCHED_WALT
-	if (!walt_disabled && sysctl_sched_use_walt_cpu_util) {
-		/*
-		 * Since WALT doesn't have blocked util, there is no need to
-		 * remove the task contribution during wake-up. Just add it to
-		 * the destination CPU.
-		 */
-		util = cpu_util(cpu);
-		if (cpu == dst_cpu)
-			util += task_util(p);
-
-		return util;
-	}
-#endif
-
-	/*
-	 * If @p migrates from @cpu to another, remove its contribution. Or,
-	 * if @p migrates from another CPU to @cpu, add its contribution. In
-	 * the other cases, @cpu is not impacted by the migration, so the
-	 * util_avg should already be correct.
-	 */
-	util = READ_ONCE(cfs_rq->avg.util_avg);
-	if (task_cpu(p) == cpu && dst_cpu != cpu)
-		sub_positive(&util, p->se.avg.util_avg);
-	else if (task_cpu(p) != cpu && dst_cpu == cpu)
-		util += p->se.avg.util_avg;
-
-	return min(util, capacity_orig_of(cpu));
-}
-
-/*
- * compute_energy_simple(): Estimates the energy that would be consumed if @p was
- * migrated to @dst_cpu. compute_energy_simple() predicts what will be the utilization
- * landscape of the * CPUs after the task migration, and uses the Energy Model
- * to compute what would be the energy if we decided to actually migrate that
- * task.
- */
-static long
-compute_energy_simple(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
-{
-	long util, max_util, sum_util, energy = 0;
-	int cpu;
-
-	for (; pd; pd = pd->next) {
-		max_util = sum_util = 0;
-		/*
-		 * The capacity state of CPUs of the current rd can be driven by
-		 * CPUs of another rd if they belong to the same performance
-		 * domain. So, account for the utilization of these CPUs too
-		 * by masking pd with cpu_online_mask instead of the rd span.
-		 *
-		 * If an entire performance domain is outside of the current rd,
-		 * it will not appear in its pd list and will not be accounted
-		 * by compute_energy_simple().
-		 */
-		for_each_cpu_and(cpu, perf_domain_span(pd), cpu_online_mask) {
-			util = cpu_util_next(cpu, p, dst_cpu);
-			max_util = max(util, max_util);
-			sum_util += util;
-		}
-
-		energy += em_pd_energy(pd->em_pd, max_util, sum_util);
-	}
-
-	return energy;
-}
-
-/*
- * find_energy_efficient_cpu(): Find most energy-efficient target CPU for the
- * waking task. find_energy_efficient_cpu() looks for the CPU with maximum
- * spare capacity in each performance domain and uses it as a potential
- * candidate to execute the task. Then, it uses the Energy Model to figure
- * out which of the CPU candidates is the most energy-efficient.
- *
- * The rationale for this heuristic is as follows. In a performance domain,
- * all the most energy efficient CPU candidates (according to the Energy
- * Model) are those for which we'll request a low frequency. When there are
- * several CPUs for which the frequency request will be the same, we don't
- * have enough data to break the tie between them, because the Energy Model
- * only includes active power costs. With this model, if we assume that
- * frequency requests follow utilization (e.g. using schedutil), the CPU with
- * the maximum spare capacity in a performance domain is guaranteed to be among
- * the best candidates of the performance domain.
- *
- * In practice, it could be preferable from an energy standpoint to pack
- * small tasks on a CPU in order to let other CPUs go in deeper idle states,
- * but that could also hurt our chances to go cluster idle, and we have no
- * ways to tell with the current Energy Model if this is actually a good
- * idea or not. So, find_energy_efficient_cpu() basically favors
- * cluster-packing, and spreading inside a cluster. That should at least be
- * a good thing for latency, and this is consistent with the idea that most
- * of the energy savings of EAS come from the asymmetry of the system, and
- * not so much from breaking the tie between identical CPUs. That's also the
- * reason why EAS is enabled in the topology code only for systems where
- * SD_ASYM_CPUCAPACITY is set.
- *
- * NOTE: Forkees are not accepted in the energy-aware wake-up path because
- * they don't have any useful utilization data yet and it's not possible to
- * forecast their impact on energy consumption. Consequently, they will be
- * placed by find_idlest_cpu() on the least loaded CPU, which might turn out
- * to be energy-inefficient in some use-cases. The alternative would be to
- * bias new tasks towards specific types of CPUs first, or to try to infer
- * their util_avg from the parent task, but those heuristics could hurt
- * other use-cases too. So, until someone finds a better way to solve this,
- * let's keep things simple by re-using the existing slow path.
- */
-
-static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
-{
-	unsigned long prev_energy = ULONG_MAX, best_energy = ULONG_MAX;
-	int highest_spare_cap_cpu = prev_cpu, best_idle_cpu = -1;
-	struct root_domain *rd = cpu_rq(smp_processor_id())->rd;
-	unsigned long highest_spare_cap = 0, target_cap;
-	unsigned int min_exit_lat = UINT_MAX;
-	int cpu, best_energy_cpu = prev_cpu;
-	struct perf_domain *head, *pd;
-	unsigned long cpu_cap, util;
-	struct cpuidle_state *idle;
-	bool prefer_idle, boosted;
-	struct sched_domain *sd;
-
-	rcu_read_lock();
-	pd = rcu_dereference(rd->pd);
-	if (!pd || READ_ONCE(rd->overutilized))
-		goto fail;
-	head = pd;
-
-	/*
-	 * Energy-aware wake-up happens on the lowest sched_domain starting
-	 * from sd_asym_cpucapacity spanning over this_cpu and prev_cpu.
-	 */
-	sd = rcu_dereference(*this_cpu_ptr(&sd_asym_cpucapacity));
-	while (sd && !cpumask_test_cpu(prev_cpu, sched_domain_span(sd)))
-		sd = sd->parent;
-	if (!sd)
-		goto fail;
-
-	sync_entity_load_avg(&p->se);
-	if (!task_util(p))
-		goto unlock;
-
-	prefer_idle = schedtune_prefer_idle(p);
-	boosted = schedtune_task_boost(p) > 0;
-	target_cap = boosted ? 0 : ULONG_MAX;
-
-	for (; pd; pd = pd->next) {
-		unsigned long cur_energy, spare_cap, max_spare_cap = 0;
-		int max_spare_cap_cpu = -1;
-
-		for_each_cpu_and(cpu, perf_domain_span(pd), sched_domain_span(sd)) {
-			if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
-				continue;
-
-			/* Skip CPUs that will be overutilized. */
-			util = cpu_util_next(cpu, p, cpu);
-			cpu_cap = capacity_of(cpu);
-			if (cpu_cap * 1024 < util * capacity_margin)
-				continue;
-
-			/* Always use prev_cpu as a candidate. */
-			if (!prefer_idle && cpu == prev_cpu) {
-				prev_energy = compute_energy_simple(p, prev_cpu, head);
-				best_energy = min(best_energy, prev_energy);
-				continue;
-			}
-
-			/*
-			 * Find the CPU with the maximum spare capacity in
-			 * the performance domain
-			 */
-			spare_cap = cpu_cap - util;
-			if (spare_cap > max_spare_cap) {
-				max_spare_cap = spare_cap;
-				max_spare_cap_cpu = cpu;
-			}
-
-			if (!prefer_idle)
-				continue;
-
-			if (idle_cpu(cpu)) {
-				cpu_cap = capacity_orig_of(cpu);
-				if (boosted && cpu_cap < target_cap)
-					continue;
-				if (!boosted && cpu_cap > target_cap)
-					continue;
-				idle = idle_get_state(cpu_rq(cpu));
-				if (idle && idle->exit_latency > min_exit_lat &&
-						cpu_cap == target_cap)
-					continue;
-
-				if (idle)
-					min_exit_lat = idle->exit_latency;
-				target_cap = cpu_cap;
-				best_idle_cpu = cpu;
-			} else if (spare_cap > highest_spare_cap) {
-				highest_spare_cap = spare_cap;
-				highest_spare_cap_cpu = cpu;
-			}
-		}
-
-		/* Evaluate the energy impact of using this CPU. */
-		if (!prefer_idle && max_spare_cap_cpu >= 0) {
-			cur_energy = compute_energy_simple(p, max_spare_cap_cpu, head);
-			if (cur_energy < best_energy) {
-				best_energy = cur_energy;
-				best_energy_cpu = max_spare_cap_cpu;
-			}
-		}
-	}
-unlock:
-	rcu_read_unlock();
-
-	if (prefer_idle)
-		return best_idle_cpu >= 0 ? best_idle_cpu : highest_spare_cap_cpu;
-
-	/*
-	 * Pick the best CPU if prev_cpu cannot be used, or if it saves at
-	 * least 6% of the energy used by prev_cpu.
-	 */
-	if (prev_energy == ULONG_MAX)
-		return best_energy_cpu;
-
-	if ((prev_energy - best_energy) > (prev_energy >> 4))
-		return best_energy_cpu;
-
-	return prev_cpu;
-
-fail:
-	rcu_read_unlock();
-
-	return -1;
-}
-
-/*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the 'sd_flag' flag set. In practice, this is SD_BALANCE_WAKE,
  * SD_BALANCE_FORK, or SD_BALANCE_EXEC.
@@ -7933,10 +7744,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	}
 
 	if (energy_aware()) {
-		new_cpu = find_energy_efficient_cpu(p, prev_cpu);
-		if (new_cpu >= 0)
-			return new_cpu;
-		new_cpu = prev_cpu;
+		rcu_read_lock();
+		new_cpu = select_energy_cpu_brute(p, prev_cpu, sync);
+		rcu_read_unlock();
+		return new_cpu;
 	}
 
 	rcu_read_lock();
@@ -11366,7 +11177,7 @@ static inline bool nohz_kick_needed(struct rq *rq, int *type)
 		}
 	}
 
-	sd = rcu_dereference(per_cpu(sd_asym_packing, cpu));
+	sd = rcu_dereference(per_cpu(sd_asym, cpu));
 	if (sd && (cpumask_first_and(&cpumask, sched_domain_span(sd)) < cpu)) {
 		kick = true;
 		goto unlock;
