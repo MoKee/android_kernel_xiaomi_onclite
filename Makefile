@@ -346,11 +346,14 @@ AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
 REAL_CC		= $(CROSS_COMPILE)gcc
 LDGOLD		= $(CROSS_COMPILE)ld.gold
+LDLLD		= ld.lld
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
+LLVMNM		= llvm-nm
 STRIP		= $(CROSS_COMPILE)strip
 OBJCOPY		= $(CROSS_COMPILE)objcopy
+LLVMOBJCOPY	= llvm-objcopy
 OBJDUMP		= $(CROSS_COMPILE)objdump
 AWK		= awk
 GENKSYMS	= scripts/genksyms/genksyms
@@ -400,11 +403,16 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Wno-format-security \
 		   -std=gnu89
 KBUILD_CPPFLAGS := -D__KERNEL__
+
+# Flags to tune generated code for Cortex-A53 CPU
+KBUILD_CFLAGS += -march=armv8-a -mtune=cortex-a53
+
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS_MODULE  := -DMODULE
 KBUILD_CFLAGS_MODULE  := -DMODULE
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+LDFLAGS :=
 GCC_PLUGINS_CFLAGS :=
 CLANG_FLAGS :=
 
@@ -552,16 +560,11 @@ CLANG_FLAGS	+= $(call cc-option, -Wno-misleading-indentation)
 CLANG_FLAGS	+= $(call cc-option, -Wno-bool-operation)
 KBUILD_CFLAGS	+= $(CLANG_FLAGS)
 KBUILD_AFLAGS	+= $(CLANG_FLAGS)
-else
-
-KBUILD_CFLAGS += $(call cc-option,-fno-delete-null-pointer-checks,)
-# These warnings generated too much noise in a regular build.
-# Use make W=1 to enable them (see scripts/Makefile.build)
-KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
-KBUILD_CFLAGS += $(call cc-disable-warning, unused-const-variable)
+ifeq ($(ld-name),lld)
+KBUILD_CFLAGS	+= -fuse-ld=lld
 endif
-
-
+KBUILD_CPPFLAGS += -Qunused-arguments
+endif
 ifeq ($(mixed-targets),1)
 # ===========================================================================
 # We're called with mixed targets (*config and build targets).
@@ -681,11 +684,21 @@ export CFLAGS_GCOV CFLAGS_KCOV
 
 # Make toolchain changes before including arch/$(SRCARCH)/Makefile to ensure
 # ar/cc/ld-* macros return correct values.
-ifdef CONFIG_LTO_CLANG
-# use GNU gold with LLVMgold for LTO linking, and LD for vmlinux_link
+ifdef CONFIG_LD_GOLD
 LDFINAL_vmlinux := $(LD)
 LD		:= $(LDGOLD)
+endif
+ifdef CONFIG_LD_LLD
+LD		:= $(LDLLD)
+endif
+
+ifdef CONFIG_LTO_CLANG
+# use GNU gold with LLVMgold or LLD for LTO linking, and LD for vmlinux_link
+ifeq ($(ld-name),gold)
 LDFLAGS		+= -plugin LLVMgold.so
+endif
+LDFLAGS		+= -plugin-opt=-function-sections
+LDFLAGS		+= -plugin-opt=-data-sections
 # use llvm-ar for building symbol tables from IR files, and llvm-dis instead
 # of objdump for processing symbol versions and exports
 LLVM_AR		:= llvm-ar
@@ -707,6 +720,8 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, attribute-alias)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, misleading-indentation)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, psabi)
 
 ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
 KBUILD_CFLAGS	+= $(call cc-option,-ffunction-sections,)
@@ -761,10 +776,13 @@ export DISABLE_CFI
 endif
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
-KBUILD_CFLAGS   += -Os
+KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
 else
-KBUILD_CFLAGS   += -O2
+KBUILD_CFLAGS   += -O3
 endif
+
+KBUILD_CFLAGS += $(call cc-ifversion, -lt, 0409, \
+			$(call cc-disable-warning,maybe-uninitialized,))
 
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
@@ -815,10 +833,17 @@ endif
 KBUILD_CFLAGS += $(stackp-flag)
 
 ifeq ($(cc-name),clang)
-KBUILD_CPPFLAGS += $(call cc-option,-Qunused-arguments,)
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-variable)
 KBUILD_CFLAGS += $(call cc-disable-warning, format-invalid-specifier)
 KBUILD_CFLAGS += $(call cc-disable-warning, gnu)
 KBUILD_CFLAGS += $(call cc-disable-warning, duplicate-decl-specifier)
+KBUILD_CFLAGS += $(call cc-option, -Wno-undefined-optimized)
+KBUILD_CFLAGS += $(call cc-option, -Wno-tautological-constant-out-of-range-compare)
+KBUILD_CFLAGS += $(call cc-option, -Wno-sometimes-uninitialized)
+KBUILD_CFLAGS += -Wno-asm-operand-widths
+KBUILD_CFLAGS += -Wno-initializer-overrides
+KBUILD_CFLAGS += -fno-builtin
+
 # Quiet clang warning: comparison of unsigned expression < 0 is always false
 KBUILD_CFLAGS += $(call cc-disable-warning, tautological-compare)
 # CLANG uses a _MergedGlobals as optimization, but this breaks modpost, as the
@@ -831,6 +856,10 @@ else
 # These warnings generated too much noise in a regular build.
 # Use make W=1 to enable them (see scripts/Makefile.extrawarn)
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
+endif
+
+ifeq ($(ld-name),lld)
+KBUILD_LDFLAGS += -O2
 endif
 
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-const-variable)
@@ -980,6 +1009,13 @@ endif
 
 ifeq ($(CONFIG_STRIP_ASM_SYMS),y)
 LDFLAGS_vmlinux	+= $(call ld-option, -X,)
+endif
+
+ifeq ($(CONFIG_RELR),y)
+LDFLAGS_vmlinux	+= --pack-dyn-relocs=relr
+OBJCOPY	:= $(LLVMOBJCOPY)
+NM	:= $(LLVMNM)
+export OBJCOPY NM
 endif
 
 # Default kernel image to build when no specific target is given.
@@ -1221,8 +1257,10 @@ ifdef CONFIG_LTO_CLANG
   ifneq ($(call clang-ifversion, -ge, 0500, y), y)
 	@echo Cannot use CONFIG_LTO_CLANG: requires clang 5.0 or later >&2 && exit 1
   endif
-  ifneq ($(call gold-ifversion, -ge, 112000000, y), y)
-	@echo Cannot use CONFIG_LTO_CLANG: requires GNU gold 1.12 or later >&2 && exit 1
+  ifneq ($(ld-name), lld)
+    ifneq ($(call gold-ifversion, -ge, 112000000, y), y)
+	@echo Cannot use CONFIG_LTO_CLANG: requires LLD or GNU gold 1.12 or later >&2 && exit 1
+    endif
   endif
 endif
 # Make sure compiler supports LTO flags

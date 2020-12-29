@@ -103,6 +103,7 @@ config ARM64
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IRQ_TIME_ACCOUNTING
+	select HAVE_LD_DEAD_CODE_DATA_ELIMINATION
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP if NUMA
 	select HAVE_PATA_PLATFORM
@@ -267,13 +268,6 @@ config PGTABLE_LEVELS
 	default 3 if ARM64_4K_PAGES && ARM64_VA_BITS_39
 	default 3 if ARM64_16K_PAGES && ARM64_VA_BITS_47
 	default 4 if !ARM64_64K_PAGES && ARM64_VA_BITS_48
-
-config BOOT_INFO
-	bool "Boot information from bootloader"
-	default y
-	help
-	  On embedded linux device, we try to collect more information from
-	  bootloader to kernel. eg. powerup reason.
 
 source "init/Kconfig"
 
@@ -774,6 +768,13 @@ config ARM64_DMA_IOMMU_ALIGNMENT
 
 endif
 
+config BOOT_INFO
+	bool "Boot information from bootloader"
+	default y
+	help
+	  On embedded linux device, we try to collect more information from
+	  bootloader to kernel. eg. powerup reason.
+
 config SECCOMP
 	bool "Enable seccomp to safely compute untrusted bytecode"
 	---help---
@@ -1077,6 +1078,7 @@ config ARM64_MODULE_PLTS
 
 config RELOCATABLE
 	bool
+	select ARCH_HAS_RELR
 	help
 	  This builds the kernel as a Position Independent Executable (PIE),
 	  which retains all relocation metadata required to relocate the
@@ -1327,7 +1329,6 @@ config KEYS_COMPAT
 config COMPAT_VDSO
 	bool "32-bit vDSO"
 	depends on COMPAT
-	select ARM_ARCH_TIMER_VCT_ACCESS
 	default n
 	help
 	  Warning: a 32-bit toolchain is necessary to build the vDSO. You

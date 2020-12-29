@@ -1545,6 +1545,7 @@ unblock_reqs:
 int ufshcd_hold(struct ufs_hba *hba, bool async)
 {
 	int rc = 0;
+	bool flush_result;
 	unsigned long flags;
 
 	if (!ufshcd_is_clkgating_allowed(hba))
@@ -1576,7 +1577,9 @@ start:
 				break;
 			}
 			spin_unlock_irqrestore(hba->host->host_lock, flags);
-			flush_work(&hba->clk_gating.ungate_work);
+			flush_result = flush_work(&hba->clk_gating.ungate_work);
+			if (hba->clk_gating.is_suspended && !flush_result)
+				goto out;
 			spin_lock_irqsave(hba->host->host_lock, flags);
 			goto start;
 		}
@@ -2001,7 +2004,6 @@ static void ufshcd_set_auto_hibern8_timer(struct ufs_hba *hba, u32 delay)
 static int ufshcd_hibern8_hold(struct ufs_hba *hba, bool async)
 {
 	int rc = 0;
-	bool flush_result;
 	unsigned long flags;
 
 	if (!ufshcd_is_hibern8_on_idle_allowed(hba))
@@ -6875,7 +6877,6 @@ static irqreturn_t ufshcd_intr(int irq, void *__hba)
 
 	spin_lock(hba->host->host_lock);
 	intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
-
 	hba->ufs_stats.last_intr_status = intr_status;
 	hba->ufs_stats.last_intr_ts = ktime_get();
 	/*
@@ -9979,7 +9980,24 @@ int ufshcd_shutdown(struct ufs_hba *hba)
 		goto out;
 
 	pm_runtime_get_sync(hba->dev);
-	
+	ufshcd_hold_all(hba);
+	ufshcd_mark_shutdown_ongoing(hba);
+	ufshcd_shutdown_clkscaling(hba);
+	/**
+	 * (1) Acquire the lock to stop any more requests
+	 * (2) Wait for all issued requests to complete
+	 */
+	ufshcd_get_write_lock(hba);
+	ufshcd_scsi_block_requests(hba);
+	ret = ufshcd_wait_for_doorbell_clr(hba, U64_MAX);
+	if (ret)
+		dev_err(hba->dev, "%s: waiting for DB clear: failed: %d\n",
+			__func__, ret);
+	/* Requests may have errored out above, let it be handled */
+	flush_work(&hba->eh_work);
+	/* reqs issued from contexts other than shutdown will fail from now */
+	ufshcd_scsi_unblock_requests(hba);
+	ufshcd_release_all(hba);
 	ret = ufshcd_suspend(hba, UFS_SHUTDOWN_PM);
 out:
 	if (ret)
