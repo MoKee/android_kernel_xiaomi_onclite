@@ -1,5 +1,5 @@
-/* Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
+/* Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -47,6 +47,7 @@
 	((typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM	\
 	|| typec_mode == POWER_SUPPLY_TYPEC_SOURCE_HIGH)	\
 	&& !chg->typec_legacy)
+
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val)
 {
@@ -693,7 +694,7 @@ static const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg)
 			}
 	}
 
-	//smblib_dbg(chg, PR_MISC, "APSD=%s PD=%d\n",
+
 	//				apsd_result->name, chg->pd_active);
 	smblib_err(chg, "lct v02 battery charge APSD=%s PD=%d\n",
 					apsd_result->name, chg->pd_active);
@@ -1493,20 +1494,10 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		break;
 	}
 
-	/*
-	 * If charge termination WA is active and has suspended charging, then
-	 * continue reporting charging status as FULL.
-	 */
-	if (is_client_vote_enabled_locked(chg->usb_icl_votable,
-						CHG_TERMINATION_VOTER)) {
-		val->intval = POWER_SUPPLY_STATUS_FULL;
+        if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
+		val->intval = POWER_SUPPLY_STATUS_CHARGING;
 		return 0;
 	}
-
-    if ((val->intval == POWER_SUPPLY_STATUS_FULL)&&(warm_state)){
-        val->intval = POWER_SUPPLY_STATUS_CHARGING;
-        return 0;
-    }
 
 	if (val->intval != POWER_SUPPLY_STATUS_CHARGING)
 		return 0;

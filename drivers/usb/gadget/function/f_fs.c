@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/uio.h>
 #include <linux/ipc_logging.h>
+#include <linux/freezer.h>
 #include <asm/unaligned.h>
 
 #include <linux/usb/composite.h>
@@ -46,8 +47,6 @@
 
 static void *ffs_ipc_log;
 #define ffs_log(fmt, ...) do { \
-	ipc_log_string(ffs_ipc_log, "%s: " fmt,  __func__, \
-			##__VA_ARGS__); \
 	pr_debug("%s: " fmt, __func__, ##__VA_ARGS__); \
 } while (0)
 
@@ -1036,7 +1035,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		 * and wait for next epfile open to happen
 		 */
 		if (!atomic_read(&epfile->error)) {
-			ret = wait_event_interruptible(epfile->wait,
+			ret = wait_event_freezable(epfile->wait,
 					(ep = epfile->ep));
 			if (ret < 0)
 				return -EINTR;
@@ -2061,7 +2060,6 @@ static void ffs_data_reset(struct ffs_data *ffs)
 	ffs->state = FFS_READ_DESCRIPTORS;
 	ffs->setup_state = FFS_NO_SETUP;
 	ffs->flags = 0;
-
 
 	ffs_log("exit: state %d setup_state %d flag %lu", ffs->state,
 		ffs->setup_state, ffs->flags);

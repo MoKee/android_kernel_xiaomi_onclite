@@ -1,5 +1,5 @@
 /* Copyright (c) 2018 The Linux Foundation. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
+ * Copyright (C) 2019 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1277,7 +1277,6 @@ static enum power_supply_property smb5_batt_props[] = {
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_RECHARGE_SOC,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
-        POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
@@ -1390,12 +1389,14 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		val->intval = get_client_vote(chg->fv_votable,
 				BATT_PROFILE_VOTER);
 		break;
+
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_CURRENT_NOW, val);
 		if (!rc)
 			val->intval *= (-1);
 		break;
+
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
 		val->intval = get_client_vote(chg->fcc_votable,
 					      BATT_PROFILE_VOTER);
@@ -1429,7 +1430,6 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_DP_DM:
 		val->intval = chg->pulse_cnt;
 		break;
-
 	case POWER_SUPPLY_PROP_RERUN_AICL:
 		val->intval = 0;
 		break;
@@ -1448,12 +1448,10 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_CHARGE_FULL, val);
 		break;
-
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 		rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN, val);
 		break;
-
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
 		rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_TIME_TO_FULL_NOW, val);
@@ -2121,7 +2119,7 @@ static int smb5_init_hw(struct smb5 *chip)
 	//if (chg->smb_version != PMI632_SUBTYPE) {
 		rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,
 				USBIN_AICL_ADC_EN_BIT, 0);
-		rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,0xff, 0x54);
+		rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,0xff, 0xd4);
 		if (rc < 0) {
 			dev_err(chg->dev, "Couldn't config AICL rc=%d\n", rc);
 			return rc;
@@ -2844,9 +2842,9 @@ static void thermal_fb_notifier_resume_work(struct work_struct *work)
 	struct smb_charger *chg = container_of(work, struct smb_charger, fb_notify_work);
 
 	LctThermal = 1;
-	if((lct_backlight_off) && (LctIsInCall == 0))//wait
-		smblib_set_prop_system_temp_level(chg,&lct_therm_level);//JEITA level_set = 0
-	else if(LctIsInCall == 1)//phone
+	if((lct_backlight_off) && (LctIsInCall == 0))
+		smblib_set_prop_system_temp_level(chg,&lct_therm_level);
+	else if(LctIsInCall == 1)
 		smblib_set_prop_system_temp_level(chg,&lct_therm_call_level);//set charging current while calling
 	else
 		smblib_set_prop_system_temp_level(chg,&lct_therm_lvl_reserved);

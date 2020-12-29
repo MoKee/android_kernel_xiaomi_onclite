@@ -18,7 +18,6 @@
  * and processes may not get killed until the normal oom killer is triggered.
  *
  * Copyright (C) 2007-2008 Google, Inc.
- * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -675,12 +674,12 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		     sc->nr_to_scan, sc->gfp_mask, other_free,
 		     other_file, min_score_adj);
 
-	if (min_score_adj == OOM_SCORE_ADJ_MAX + 1 || (ret == VMPRESSURE_ADJUST_ENCROACH)) {
+	if (min_score_adj == OOM_SCORE_ADJ_MAX + 1) {
 		trace_almk_shrink(0, ret, other_free, other_file, 0);
 		lowmem_print(5, "lowmem_scan %lu, %x, return 0\n",
 			     sc->nr_to_scan, sc->gfp_mask);
 		mutex_unlock(&scan_mutex);
-		return SHRINK_STOP;
+		return 0;
 	}
 
 	selected_oom_score_adj = min_score_adj;
@@ -832,10 +831,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		put_task_struct(selected);
 	}
 
-	if (rem == 0)
-		return SHRINK_STOP;
-	else
-		return rem;
+	return rem;
 }
 
 static struct shrinker lowmem_shrinker = {

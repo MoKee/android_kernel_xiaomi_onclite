@@ -1,5 +1,6 @@
 /************************************************************************
 * Copyright (C) 2012-2018, Focaltech Systems (R)，All Rights Reserved.
+* Copyright (C) 2019 XiaoMi, Inc.
 *
 * File Name: focaltech_test_detail_threshold.c
 *
@@ -263,9 +264,7 @@ void OnInit_DThreshold_RawDataTest(char *strIniFile)
 
 	for (i = 0; i < test_data.screen_param.tx_num + 1; i++) {
 		sprintf(str, "RawData_Max_Tx%d", (i + 1));
-		//FTS_TEST_DBG("%s ",  str);
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "111", strTemp, strIniFile);
-		//FTS_TEST_DBG("GetPrivateProfileString = %d ",  dividerPos);
 		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
@@ -275,7 +274,6 @@ void OnInit_DThreshold_RawDataTest(char *strIniFile)
 			if (',' == strValue[j]) {
 				test_data.mcap_detail_thr.rawdata_test_max[i][k] = (short)(fts_atoi(str_tmp));
 				test_data.incell_detail_thr.rawdata_test_max[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) Rawdata_Max_Tx%d = %d \n", (i+1), (k+1), (i+1),test_data.incell_detail_thr.rawdata_test_max[i*test_data.screen_param.rx_num+k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -314,7 +312,6 @@ void OnInit_DThreshold_RawDataTest(char *strIniFile)
 			if (',' == strValue[j]) {
 				test_data.mcap_detail_thr.rawdata_test_min[i][k] = (short)(fts_atoi(str_tmp));
 				test_data.incell_detail_thr.rawdata_test_min[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) Rawdata_Min_Tx%d = %d \n", (i+1), (k+1), (i+1),test_data.incell_detail_thr.rawdata_test_min[i*test_data.screen_param.rx_num+k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -747,7 +744,6 @@ void OnInit_DThreshold_PanelDifferTest(char *strIniFile)
 	char str_tmp[128];
 
 	FTS_TEST_FUNC_ENTER();
-	////////////////////////////Panel_Differ Test
 	GetPrivateProfileString("Basic_Threshold", "PanelDifferTest_Max", "1000", str, strIniFile);
 	MaxValue = fts_atoi(str);
 	for ( i = 0; i < TX_NUM_MAX; i++) {
@@ -828,11 +824,8 @@ void OnInit_DThreshold_RxLinearityTest(char *strIniFile)
 
 	FTS_TEST_FUNC_ENTER();
 
-	////////////////////////////Rx_Linearity Test
 	GetPrivateProfileString( "Basic_Threshold", "RxLinearityTest_Max", "50", str, strIniFile);
 	MaxValue = fts_atoi(str);
-
-	//FTS_TEST_DBG("MaxValue = %d  ",  MaxValue);
 
 	for (i = 0; i < test_data.screen_param.used_max_tx_num; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
@@ -842,9 +835,7 @@ void OnInit_DThreshold_RxLinearityTest(char *strIniFile)
 
 	for (i = 0; i < test_data.screen_param.used_max_tx_num; i++) {
 		sprintf(str, "Rx_Linearity_Max_Tx%d", (i + 1));
-		//FTS_TEST_DBG("%s ",  str);
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "111", strTemp, strIniFile);
-		//FTS_TEST_DBG("GetPrivateProfileString = %d ",  dividerPos);
 		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
@@ -880,11 +871,9 @@ void OnInit_DThreshold_TxLinearityTest(char *strIniFile)
 
 	FTS_TEST_FUNC_ENTER();
 
-	////////////////////////////Tx_Linearity Test
 	GetPrivateProfileString( "Basic_Threshold", "TxLinearityTest_Max", "50", str, strIniFile);
 	MaxValue = fts_atoi(str);
 
-	//FTS_TEST_DBG("MaxValue = %d  ",  MaxValue);
 
 	for (i = 0; i < test_data.screen_param.used_max_tx_num; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
@@ -894,9 +883,7 @@ void OnInit_DThreshold_TxLinearityTest(char *strIniFile)
 
 	for (i = 0; i < test_data.screen_param.used_max_tx_num; i++) {
 		sprintf(str, "Tx_Linearity_Max_Tx%d", (i + 1));
-		//FTS_TEST_DBG("%s ",  str);
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "111", strTemp, strIniFile);
-		//FTS_TEST_DBG("GetPrivateProfileString = %d ",  dividerPos);
 		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
@@ -932,13 +919,11 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 
 	FTS_TEST_FUNC_ENTER();
 
-	//////////////////OFF
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapRawDataTest_OFF_Min", "150", str, strIniFile);
 	MinValue = fts_atoi(str);
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapRawDataTest_OFF_Max", "1000", str, strIniFile);
 	MaxValue = fts_atoi(str);
 
-	///Max
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapRawDataTest_OFF_Max[i][j] = MaxValue;
@@ -966,7 +951,6 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 			}
 		}
 	}
-	////Min
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapRawDataTest_OFF_Min[i][j] = MinValue;
@@ -995,16 +979,12 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 		}
 	}
 
-	//////////////////ON
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapRawDataTest_ON_Min", "150", str, strIniFile);
 	MinValue = fts_atoi(str);
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapRawDataTest_ON_Max", "1000", str, strIniFile);
 	MaxValue = fts_atoi(str);
 
-	//FTS_TEST_DBG("%d:%d\r", MinValue, MaxValue);
-	//////读取阈值，若无特殊设置，则以Basic_Threshold替代
 
-	///Max
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapRawDataTest_ON_Max[i][j] = MaxValue;
@@ -1013,7 +993,7 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 	for (i = 0; i < 1; i++) {
 		sprintf(str, "ForceTouch_ScapRawData_ON_Max_%d", (i + 1));
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
-		sprintf(strValue, "%s", strTemp); //FTS_TEST_DBG("%s:%s\r", str, strTemp);
+		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1032,7 +1012,6 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 			}
 		}
 	}
-	////Min
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapRawDataTest_ON_Min[i][j] = MinValue;
@@ -1041,7 +1020,7 @@ void OnInit_DThreshold_ForceTouch_SCapRawDataTest(char *strIniFile)
 	for (i = 0; i < 1; i++) {
 		sprintf(str, "ForceTouch_ScapRawData_ON_Min_%d", (i + 1));
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
-		sprintf(strValue, "%s", strTemp); //FTS_TEST_DBG("%s:%s\r", str, strTemp);
+		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1075,16 +1054,11 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 
 	FTS_TEST_FUNC_ENTER();
 
-	//////////////////ON
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapCbTest_ON_Min", "0", str, strIniFile);
 	MinValue = fts_atoi(str);
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapCbTest_ON_Max", "240", str, strIniFile);
 	MaxValue = fts_atoi(str);
 
-	//FTS_TEST_DBG("%d:%d\r", MinValue, MaxValue);
-	//////读取阈值，若无特殊设置，则以Basic_Threshold替代
-
-	///Max
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapCbTest_ON_Max[i][j] = MaxValue;
@@ -1093,7 +1067,7 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 	for (i = 0; i < 1; i++) {
 		sprintf(str, "ForceTouch_ScapCB_ON_Max_%d", (i + 1));
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
-		sprintf(strValue, "%s", strTemp); //FTS_TEST_DBG("%s:%s\r", str, strTemp);
+		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1112,7 +1086,6 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 			}
 		}
 	}
-	////Min
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapCbTest_ON_Min[i][j] = MinValue;
@@ -1121,7 +1094,7 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 	for (i = 0; i < 1; i++) {
 		sprintf(str, "ForceTouch_ScapCB_ON_Min_%d", (i + 1));
 		dividerPos = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
-		sprintf(strValue, "%s", strTemp); //FTS_TEST_DBG("%s:%s\r", str, strTemp);
+		sprintf(strValue, "%s", strTemp);
 		if (0 == dividerPos) continue;
 		index = 0;
 		FTS_TEST_DBG("%s\r", strTemp);
@@ -1142,12 +1115,10 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 		}
 	}
 
-	//////////////////OFF
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapCbTest_OFF_Min", "0", str, strIniFile);
 	MinValue = fts_atoi(str);
 	GetPrivateProfileString("Basic_Threshold", "ForceTouch_SCapCbTest_OFF_Max", "240", str, strIniFile);
 	MaxValue = fts_atoi(str);
-	///Max
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapCbTest_OFF_Max[i][j] = MaxValue;
@@ -1175,7 +1146,6 @@ void OnInit_DThreshold_ForceTouch_SCapCbTest(char *strIniFile)
 			}
 		}
 	}
-	////Min
 	for (i = 0; i < 1; i++) {
 		for (j = 0; j < test_data.screen_param.used_max_rx_num; j++) {
 			test_data.mcap_detail_thr.ForceTouch_SCapCbTest_OFF_Min[i][j] = MinValue;
@@ -1242,10 +1212,8 @@ void OnInit_DThreshold_CBTest(char *strIniFile)
 
 	for ( i = 0; i < test_data.screen_param.tx_num + 1; i++) {
 		sprintf(str, "CB_Max_Tx%d", (i + 1));
-		//FTS_TEST_DBG("%s ",  str);
 		dividerPos  = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		// FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1253,7 +1221,6 @@ void OnInit_DThreshold_CBTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.cb_test_max[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) CB_Max_Tx%d = %d cb_test_max[%d] = %d\n", (i+1), (k+1), (i+1),test_data.incell_detail_thr.cb_test_max[i*test_data.screen_param.rx_num+k], i*test_data.screen_param.rx_num+k, test_data.incell_detail_thr.cb_test_max[i*test_data.screen_param.rx_num+k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -1290,7 +1257,6 @@ void OnInit_DThreshold_CBTest(char *strIniFile)
 		sprintf(str, "CB_Min_Tx%d", (i + 1));
 		dividerPos  =  GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		//FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1298,7 +1264,6 @@ void OnInit_DThreshold_CBTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.cb_test_min[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) CB_Min_Tx%d = %d cb_test_min[%d] = %d \n", (i+1), (k+1), (i+1),test_data.incell_detail_thr.cb_test_min[i*test_data.screen_param.rx_num+k], i*test_data.screen_param.rx_num+k, test_data.incell_detail_thr.cb_test_min[i*test_data.screen_param.rx_num+k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -1338,10 +1303,8 @@ void OnInit_DThreshold_AllButtonCBTest(char *strIniFile)
 
 	for ( i = 0; i < test_data.screen_param.tx_num + 1; i++) {
 		sprintf(str, "CB_Max_Tx%d", (i + 1));
-		//FTS_TEST_DBG("%s ",  str);
 		dividerPos  = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		// FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1349,7 +1312,6 @@ void OnInit_DThreshold_AllButtonCBTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.cb_test_max[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) value = %d \n", (i+1), (k+1), test_data.incell_detail_thr.cb_test_max[i][k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -1377,7 +1339,6 @@ void OnInit_DThreshold_AllButtonCBTest(char *strIniFile)
 		sprintf(str, "CB_Min_Tx%d", (i + 1));
 		dividerPos  =  GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		//FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1385,7 +1346,6 @@ void OnInit_DThreshold_AllButtonCBTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.cb_test_min[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) value = %d \n", (i+1), (k+1), test_data.incell_detail_thr.cb_test_min[i*dividerPos+k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -1443,7 +1403,6 @@ void OnThreshold_VkAndVaRawDataSeparateTest(char *strIniFile)
 		sprintf(str, "RawData_Max_Tx%d", (i + 1));
 		dividerPos  = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		//FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1451,7 +1410,6 @@ void OnThreshold_VkAndVaRawDataSeparateTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.rawdata_test_max[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//  FTS_TEST_DBG("node (%d, %d) value = %d \n", (i+1), (k+1), test_data.incell_detail_thr.rawdata_test_max[i][k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;
@@ -1486,7 +1444,6 @@ void OnThreshold_VkAndVaRawDataSeparateTest(char *strIniFile)
 		sprintf(str, "RawData_Min_Tx%d", (i + 1));
 		dividerPos  = GetPrivateProfileString( "SpecialSet", str, "NULL", strTemp, strIniFile);
 		sprintf(strValue, "%s", strTemp);
-		//FTS_TEST_DBG("i = %d, dividerPos = %d \n", i+1, dividerPos);
 		if (0 == dividerPos) continue;
 		index = 0;
 		k = 0;
@@ -1494,7 +1451,6 @@ void OnThreshold_VkAndVaRawDataSeparateTest(char *strIniFile)
 		for (j = 0; j < dividerPos; j++) {
 			if (',' == strValue[j]) {
 				test_data.incell_detail_thr.rawdata_test_min[i * test_data.screen_param.rx_num + k] = (short)(fts_atoi(str_tmp));
-				//FTS_TEST_DBG("node (%d, %d) value = %d \n", (i+1), (k+1), test_data.incell_detail_thr.rawdata_test_min[i][k]);
 				index = 0;
 				memset(str_tmp, 0x00, sizeof(str_tmp));
 				k++;

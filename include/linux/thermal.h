@@ -32,7 +32,7 @@
 #include <uapi/linux/thermal.h>
 
 #define THERMAL_TRIPS_NONE	-1
-#define THERMAL_MAX_TRIPS	12
+#define THERMAL_MAX_TRIPS	17
 
 /* invalid cooling state */
 #define THERMAL_CSTATE_INVALID -1UL
@@ -267,7 +267,7 @@ struct thermal_message_device {
 };
 int thermal_message_device_register(void);
 void thermal_message_device_unregister(void);
-#endif //CONFIG_THERMAL_SWITCH
+#endif
 
 /**
  * struct thermal_governor - structure that holds thermal governor information
