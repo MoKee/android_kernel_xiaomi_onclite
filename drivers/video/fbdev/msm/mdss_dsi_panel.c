@@ -1,5 +1,5 @@
 /* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
- * Copyright (C) 2019 XiaoMi, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -732,12 +732,6 @@ static int mdss_dsi_set_col_page_addr(struct mdss_panel_data *pdata,
 			return 0;
 		}
 
-		if (pinfo->partial_update_col_addr_offset)
-			roi.x += pinfo->partial_update_col_addr_offset;
-
-		if (pinfo->partial_update_row_addr_offset)
-			roi.y += pinfo->partial_update_row_addr_offset;
-
 		if (pinfo->dcs_cmd_by_left) {
 			if (left_or_both && ctrl->ndx == DSI_CTRL_RIGHT) {
 				/* 2A/2B sent by left already */
@@ -892,7 +886,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct mdss_dsi_ctrl_pdata *sctrl;
+	struct mdss_dsi_ctrl_pdata *sctrl = NULL;
 	static u32 old_bl_level = 0;
 
 	if (pdata == NULL) {
@@ -908,6 +902,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	 * for the backlight brightness. If the brightness is less
 	 * than it, the controller can malfunction.
 	 */
+	pr_err("%s: bl_level:%d\n", __func__, bl_level);
 
 	if ((bl_level < pdata->panel_info.bl_min) && (bl_level != 0))
 		bl_level = pdata->panel_info.bl_min;
@@ -1916,13 +1911,17 @@ static bool mdss_dsi_cmp_panel_reg_v2(struct mdss_dsi_ctrl_pdata *ctrl)
 	for (i = 0; i < ctrl->status_cmds.cmd_cnt; i++)
 		len += lenp[i];
 
+	for (i = 0; i < len; i++) {
+		pr_debug("[%i] return:0x%x status:0x%x\n",
+			i, (unsigned int)ctrl->return_buf[i],
+			(unsigned int)ctrl->status_value[j + i]);
+		MDSS_XLOG(ctrl->ndx, ctrl->return_buf[i],
+			ctrl->status_value[j + i]);
+		j += len;
+	}
+
 	for (j = 0; j < ctrl->groups; ++j) {
 		for (i = 0; i < len; ++i) {
-			pr_debug("[%i] return:0x%x status:0x%x\n",
-				i, ctrl->return_buf[i],
-				(unsigned int)ctrl->status_value[group + i]);
-			MDSS_XLOG(ctrl->ndx, ctrl->return_buf[i],
-					ctrl->status_value[group + i]);
 			if (ctrl->return_buf[i] !=
 				ctrl->status_value[group + i])
 				break;
@@ -2246,7 +2245,6 @@ error:
 static int mdss_dsi_parse_panel_features(struct device_node *np,
 	struct mdss_dsi_ctrl_pdata *ctrl)
 {
-	u32 value[2];
 	struct mdss_panel_info *pinfo;
 
 	if (!np || !ctrl) {
@@ -2264,14 +2262,6 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 					pinfo->partial_update_enabled);
 		ctrl->set_col_page_addr = mdss_dsi_set_col_page_addr;
 		if (pinfo->partial_update_enabled) {
-			int rc = of_property_read_u32_array(np,
-				"qcom,partial-update-addr-offset",
-				value, 2);
-			pinfo->partial_update_col_addr_offset =
-				(!rc ? value[0] : 0);
-			pinfo->partial_update_row_addr_offset =
-				(!rc ? value[1] : 0);
-
 			pinfo->partial_update_roi_merge =
 					of_property_read_bool(np,
 					"qcom,partial-update-roi-merge");
@@ -2750,24 +2740,20 @@ static int mdss_panel_parse_display_timings(struct device_node *np,
 
 	timings_np = of_get_child_by_name(np, "qcom,mdss-dsi-display-timings");
 	if (!timings_np) {
-		struct dsi_panel_timing *pt;
+		struct dsi_panel_timing pt;
 
-		pt = kzalloc(sizeof(*pt), GFP_KERNEL);
-		if (!pt)
-			return -ENOMEM;
+		memset(&pt, 0, sizeof(struct dsi_panel_timing));
 
 		/*
 		 * display timings node is not available, fallback to reading
 		 * timings directly from root node instead
 		 */
 		pr_debug("reading display-timings from panel node\n");
-		rc = mdss_dsi_panel_timing_from_dt(np, pt, panel_data);
+		rc = mdss_dsi_panel_timing_from_dt(np, &pt, panel_data);
 		if (!rc) {
-			mdss_dsi_panel_config_res_properties(np, pt,
+			mdss_dsi_panel_config_res_properties(np, &pt,
 					panel_data, true);
-			rc = mdss_dsi_panel_timing_switch(ctrl, &pt->timing);
-		} else {
-			kfree(pt);
+			rc = mdss_dsi_panel_timing_switch(ctrl, &pt.timing);
 		}
 		return rc;
 	}

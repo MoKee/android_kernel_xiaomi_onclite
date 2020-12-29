@@ -80,7 +80,6 @@
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
 #include <linux/cpufreq_times.h>
-#include <linux/simple_lmk.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -172,24 +171,6 @@ void __weak arch_release_thread_stack(unsigned long *stack)
  */
 #define NR_CACHED_STACKS 2
 static DEFINE_PER_CPU(struct vm_struct *, cached_stacks[NR_CACHED_STACKS]);
-
-static int free_vm_stack_cache(unsigned int cpu)
-{
-	struct vm_struct **cached_vm_stacks = per_cpu_ptr(cached_stacks, cpu);
-	int i;
-
-	for (i = 0; i < NR_CACHED_STACKS; i++) {
-		struct vm_struct *vm_stack = cached_vm_stacks[i];
-
-		if (!vm_stack)
-			continue;
-
-		vfree(vm_stack->addr);
-		cached_vm_stacks[i] = NULL;
-	}
-
-	return 0;
-}
 #endif
 
 static unsigned long *alloc_thread_stack_node(struct task_struct *tsk, int node)
@@ -437,10 +418,10 @@ static void set_max_threads(unsigned int max_threads_suggested)
 	 * The number of threads shall be limited such that the thread
 	 * structures may only consume a small part of the available memory.
 	 */
-	if (fls64(totalram_pages()) + fls64(PAGE_SIZE) > 64)
+	if (fls64(totalram_pages) + fls64(PAGE_SIZE) > 64)
 		threads = MAX_THREADS;
 	else
-		threads = div64_u64((u64) totalram_pages() * (u64) PAGE_SIZE,
+		threads = div64_u64((u64) totalram_pages * (u64) PAGE_SIZE,
 				    (u64) THREAD_SIZE * 8UL);
 
 	if (threads > max_threads_suggested)
@@ -480,11 +461,6 @@ void __init fork_init(void)
 	for (i = 0; i < UCOUNT_COUNTS; i++) {
 		init_user_ns.ucount_max[i] = max_threads/2;
 	}
-
-#ifdef CONFIG_VMAP_STACK
-	cpuhp_setup_state(CPUHP_BP_PREPARE_DYN, "fork:vm_stack_cache",
-			  NULL, free_vm_stack_cache);
-#endif
 }
 
 int __weak arch_dup_task_struct(struct task_struct *dst,
@@ -911,7 +887,6 @@ static inline void __mmput(struct mm_struct *mm)
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
 	exit_mmap(mm);
-	simple_lmk_mm_freed(mm);
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);
 	if (!list_empty(&mm->mmlist)) {

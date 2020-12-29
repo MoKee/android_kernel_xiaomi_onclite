@@ -1534,7 +1534,6 @@ struct ravg {
 	u32 coloc_demand;
 	u32 sum_history[RAVG_HIST_SIZE_MAX];
 	u32 *curr_window_cpu, *prev_window_cpu;
-	u64 proc_load;
 	u32 curr_window, prev_window;
 	u16 active_windows;
 	u32 pred_demand;
@@ -1817,10 +1816,6 @@ struct task_struct {
 #ifdef CONFIG_CGROUPS
 	/* disallow userland-initiated cgroup migration */
 	unsigned no_cgroup_migration:1;
-#endif
-#ifdef CONFIG_PSI
-	/* Stalled due to lack of memory */
-	unsigned			in_memstall:1;
 #endif
 
 	unsigned long atomic_flags; /* Flags needing atomic access. */
@@ -2529,7 +2524,7 @@ extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, 
 #define PF_KTHREAD	0x00200000	/* I am a kernel thread */
 #define PF_RANDOMIZE	0x00400000	/* randomize virtual address space */
 #define PF_SWAPWRITE	0x00800000	/* Allowed to write to swap */
-#define PF_PERF_CRITICAL 0x01000000	/* Thread is performance-critical */
+#define PF_MEMSTALL	0x01000000	/* Stalled due to lack of memory */
 #define PF_NO_SETAFFINITY 0x04000000	/* Userland is not allowed to meddle with cpus_allowed */
 #define PF_MCE_EARLY    0x08000000      /* Early kill for mce process policy */
 #define PF_MUTEX_TESTER	0x20000000	/* Thread belongs to the rt mutex tester */
@@ -3967,16 +3962,5 @@ void cpufreq_remove_update_util_hook(int cpu);
 #endif /* CONFIG_CPU_FREQ */
 
 extern DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
-
-#ifndef arch_scale_cpu_capacity
-static __always_inline
-unsigned long arch_scale_cpu_capacity(struct sched_domain *sd, int cpu)
-{
-	if (sd && (sd->flags & SD_SHARE_CPUCAPACITY) && (sd->span_weight > 1))
-		return sd->smt_gain / sd->span_weight;
-
-	return SCHED_CAPACITY_SCALE;
-}
-#endif
 
 #endif

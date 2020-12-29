@@ -810,7 +810,7 @@ stepper_exit:
 	chip->slave_fcc_ua = parallel_fcc;
 
 	if (reschedule_ms) {
-		queue_delayed_work(system_power_efficient_wq,&chip->fcc_stepper_work,
+		schedule_delayed_work(&chip->fcc_stepper_work,
 				msecs_to_jiffies(reschedule_ms));
 		pr_debug("Rescheduling FCC_STEPPER work\n");
 		return;
@@ -927,7 +927,7 @@ static int usb_icl_vote_callback(struct votable *votable, void *data,
 	if (icl_ua <= 1400000)
 		vote(chip->pl_enable_votable_indirect, USBIN_I_VOTER, false, 0);
 	else
-		queue_delayed_work(system_power_efficient_wq,&chip->status_change_work,
+		schedule_delayed_work(&chip->status_change_work,
 						msecs_to_jiffies(PL_DELAY_MS));
 
 	/* rerun AICL */
